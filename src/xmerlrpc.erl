@@ -9,7 +9,7 @@
 %% client API
 -export([call/3]).
 %% XML messages API
--export([request/3, response/3]).
+-export([request/3, result/2, exception/3]).
 -export([parse/1, parse_request/1, parse_response/1]).
 %% TODO: HTTP request/response creation
 %-export([http_request/1, http_response/1]).
@@ -21,17 +21,13 @@
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
-%% @type url() = string() | binary().
-%% @type proc_name() = string() | binary() | atom().
-%% @type proc_args() = [term()].
-
 %%% }}}
 %%%---------------------------------------------------------------------------
 %%% client {{{
 
 %% @doc Call remote procedure.
 %%
-%% @spec call(proc_name(), proc_args(), Options) ->
+%% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], Opts) ->
 %%   term()
 
 call(_Proc, _Args, _Opts) ->
@@ -44,21 +40,35 @@ call(_Proc, _Args, _Opts) ->
 %%%---------------------------------------------------------
 %%% message construction {{{
 
-%% @doc Create XML-RPC request document.
+%% @doc Create XML-RPC request (function call) document.
 %%
-%% @spec request(proc_name(), proc_args(), Options) ->
-%%   binary()
+%% @spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], Opts) ->
+%%   iolist()
 
 request(_Proc, _Args, _Opts) ->
   'TODO'.
 
-%% @doc Create XML-RPC response document.
+%% @doc Create XML-RPC response document carrying result data returned by the
+%%   function.
 %%
-%% @spec response(result | exception, proc_name(), Options) ->
-%%   binary()
+%% @spec result(term(), Opts) ->
+%%   iolist()
 
-response(_Type, _Proc, _Opts) ->
-  'TODO'.
+result(Result, _Opts) ->
+  % TODO: pass options
+  xmerlrpc_xml:result(Result, []).
+
+%% @doc Create XML-RPC exception document.
+%%
+%% @TODO
+%%   Make `Message' iolist() instead of binary()
+%%
+%% @spec exception(integer(), binary(), Opts) ->
+%%   iolist()
+
+exception(Code, Message, _Opts) ->
+  % TODO: pass options
+  xmerlrpc_xml:exception(Code, Message, []).
 
 %%% }}}
 %%%---------------------------------------------------------
