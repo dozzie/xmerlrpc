@@ -1,0 +1,12 @@
+@author Stanislaw Klekot <dozzie@jarowit.net>
+@version 0.0.0
+@title XML-RPC client and server for Erlang.
+@doc
+
+<b>TODO</b>: some description.
+
+== Example usage ==
+
+<b>TODO</b>
+
+<!-- vim:set ft=edoc: -->
