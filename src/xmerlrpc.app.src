@@ -1,0 +1,9 @@
+{application, xmerlrpc, [
+  {description, "XML-RPC client and server"},
+  {vsn, "0.0.0"},
+  {registered, []},
+  {applications, [kernel, stdlib, xmerl]},
+  %{mod, { xmerlrpc_app, []}}, % callback module
+  {env, []}
+]}.
+% vim:ft=erlang
