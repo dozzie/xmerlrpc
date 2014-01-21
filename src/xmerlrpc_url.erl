@@ -10,6 +10,7 @@
 -export([parse/1]).
 -export([form/1, form/2, form/4, form/5]).
 -export([url_spec/1, url_spec/2, url_spec/4, url_spec/5]).
+-export([percent_encode/1]).
 
 %% raw URL and URL broken into parts
 -export_type([url/0, url_spec/0]).
@@ -71,10 +72,63 @@ parse(_URL) ->
 %%            string()) ->
 %%   url()
 
-form(_Protocol, _Creds, _Host, _Port, _Path) ->
-  'TODO'.
+form(Protocol, Creds, Host, Port, Path) ->
+  case Protocol of
+    http -> "http://";
+    https -> "https://"
+  end
+  ++
+  case Creds of
+    none -> "";
+    {User, Pass} -> percent_encode(User) ++ ":" ++ percent_encode(Pass) ++ "@"
+  end
+  ++
+  Host
+  ++
+  case {Protocol, Port} of
+    {_, default} -> "";
+    {http,  80}  -> "";
+    {https, 443} -> "";
+    {_, _}       -> ":" ++ integer_to_list(Port)
+  end
+  ++
+  case Path of
+    "" -> "/";
+    _  -> Path
+  end.
 
-%% @doc Reconstruct HTTP URL from fragments.
+%% @doc `%'-encode string.
+%%   List of characters to encode taken from
+%%   <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a>.
+%%
+%% @spec percent_encode(string() | binary()) ->
+%%   string()
+
+percent_encode(String) when is_binary(String) ->
+  percent_encode(binary_to_list(String));
+percent_encode(":" ++ Rest) -> "%3a" ++ percent_encode(Rest);
+percent_encode("/" ++ Rest) -> "%2f" ++ percent_encode(Rest);
+percent_encode("?" ++ Rest) -> "%3f" ++ percent_encode(Rest);
+percent_encode("#" ++ Rest) -> "%23" ++ percent_encode(Rest);
+percent_encode("[" ++ Rest) -> "%5b" ++ percent_encode(Rest);
+percent_encode("]" ++ Rest) -> "%5d" ++ percent_encode(Rest);
+percent_encode("@" ++ Rest) -> "%40" ++ percent_encode(Rest);
+percent_encode("!" ++ Rest) -> "%21" ++ percent_encode(Rest);
+percent_encode("$" ++ Rest) -> "%24" ++ percent_encode(Rest);
+percent_encode("&" ++ Rest) -> "%26" ++ percent_encode(Rest);
+percent_encode("'" ++ Rest) -> "%27" ++ percent_encode(Rest);
+percent_encode("(" ++ Rest) -> "%28" ++ percent_encode(Rest);
+percent_encode(")" ++ Rest) -> "%29" ++ percent_encode(Rest);
+percent_encode("*" ++ Rest) -> "%2a" ++ percent_encode(Rest);
+percent_encode("+" ++ Rest) -> "%2b" ++ percent_encode(Rest);
+percent_encode("," ++ Rest) -> "%2c" ++ percent_encode(Rest);
+percent_encode(";" ++ Rest) -> "%3b" ++ percent_encode(Rest);
+percent_encode("=" ++ Rest) -> "%3d" ++ percent_encode(Rest);
+percent_encode([C | Rest])  -> [C | percent_encode(Rest)];
+percent_encode("") -> "".
+
+%% @equiv form(Protocol, none, Host, Port, Path)
+%% @see   form/5
 %%
 %% @spec form(protocol(), hostname(), portnum() | default, string()) ->
 %%   url()
@@ -82,7 +136,8 @@ form(_Protocol, _Creds, _Host, _Port, _Path) ->
 form(Protocol, Host, Port, Path) ->
   form(Protocol, none, Host, Port, Path).
 
-%% @doc Reconstruct HTTP URL from fragments.
+%% @equiv form(Protocol, none, Host, Port, Path)
+%% @see   form/5
 %%
 %% @spec form(hostname(), portnum() | default) ->
 %%   url()
@@ -92,6 +147,7 @@ form(Host, Port) ->
 
 %% @doc Reconstruct HTTP URL from fragments.
 %%   The tuple is compatible with the one returned by {@link parse/1}.
+%% @see form/5
 %%
 %% @spec form(url_spec()) ->
 %%   url()
