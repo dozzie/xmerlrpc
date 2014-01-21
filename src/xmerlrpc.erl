@@ -10,7 +10,7 @@
 -export([call/3]).
 %% XML messages API
 -export([request/3, result/2, exception/3]).
--export([parse/1, parse_request/1, parse_response/1]).
+-export([parse/2, parse_request/2, parse_response/2]).
 %% TODO: HTTP request/response creation
 %-export([http_request/1, http_response/1]).
 %% TODO: request dispatching and routing
@@ -76,32 +76,32 @@ exception(Code, Message, _Opts) ->
 
 %% @doc Parse XML message to request, result or exception.
 %%
-%% @spec parse(binary() | string()) ->
+%% @spec parse(binary() | string(), Opts) ->
 %%     {ok, request,   Request :: any()}
 %%   | {ok, result,    Result  :: any()}
 %%   | {ok, exception, Message :: any()}
 %%   | {error, Reason}
 
-parse(_XMLDocument) ->
+parse(_XMLDocument, _Opts) ->
   'TODO'.
 
 %% @doc Parse XML message to request.
 %%
-%% @spec parse_request(binary() | string()) ->
+%% @spec parse_request(binary() | string(), Opts) ->
 %%     {ok, request, Request :: any()}
 %%   | {error, Reason}
 
-parse_request(_XMLDocument) ->
+parse_request(_XMLDocument, _Opts) ->
   'TODO'.
 
 %% @doc Parse XML message to result or exception.
 %%
-%% @spec parse_response(binary() | string()) ->
+%% @spec parse_response(binary() | string(), Opts) ->
 %%     {ok, result,    Result  :: any()}
 %%   | {ok, exception, Message :: any()}
 %%   | {error, Reason}
 
-parse_response(_XMLDocument) ->
+parse_response(_XMLDocument, _Opts) ->
   'TODO'.
 
 %%% }}}
