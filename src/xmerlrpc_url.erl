@@ -57,10 +57,70 @@
 %%   Note that URL arguments (`?foo=...') are treated as a part of path.
 %%
 %% @spec parse(url()) ->
+%%   url_spec() | {error, Reason}
+
+parse(URL) ->
+  try
+    parse_real(URL)
+  catch
+    error:_Any ->
+      io:fwrite("! ~p~n  ~p~n", [_Any, erlang:get_stacktrace()]),
+      {error, badarg}
+  end.
+
+%% @doc Split URL to protocol, host, port, path, and credentials.
+%%   This is the working function. {@link parse/1} only catches pattern
+%%   matching errors.
+%%
+%% @spec parse_real(url()) ->
 %%   url_spec()
 
-parse(_URL) ->
-  'TODO'.
+parse_real(URL) ->
+  URLLowCase = string:to_lower(URL),
+
+  % also, RestLowCase is now bound
+  {Proto, Rest} = case URLLowCase of
+    "https://" ++ RestLowCase ->
+      {https, string:substr(URL, 9)};
+    "http://" ++ RestLowCase ->
+      {http, string:substr(URL, 8)}
+  end,
+
+  {CredsHostPort, CredsHostPortLowCase, Path} = case string:chr(Rest, $/) of
+    0  -> {Rest, RestLowCase, "/"};
+    P1 -> {
+      string:substr(Rest, 1, P1-1),
+      string:substr(RestLowCase, 1, P1-1),
+      string:substr(Rest, P1)
+    }
+  end,
+
+  {CredsPair, HostPort} = case string:chr(CredsHostPort, $@) of
+    0  -> {"", CredsHostPortLowCase};
+    P2 -> {
+      string:substr(CredsHostPort, 1, P2-1),
+      string:substr(CredsHostPortLowCase, P2+1)
+    }
+  end,
+
+  Creds = case {CredsPair, string:chr(CredsPair, $:)} of
+    {"", 0} -> none;
+    {_, 0}  -> {CredsPair, ""}; % XXX: or 'none'?
+    {_, P3} -> {
+      string:substr(CredsPair, 1, P3-1),
+      string:substr(CredsPair, P3+1)
+    }
+  end,
+
+  {Host, Port} = case string:chr(HostPort, $:) of
+    0  -> {HostPort, default};
+    P4 -> {
+      string:substr(HostPort, 1, P4-1),
+      list_to_integer(string:substr(HostPort, P4+1))
+    }
+  end,
+
+  {Proto, Creds, Host, Port, Path}.
 
 %%% }}}
 %%%---------------------------------------------------------------------------
