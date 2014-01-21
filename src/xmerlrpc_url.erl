@@ -9,6 +9,7 @@
 %% public API
 -export([parse/1]).
 -export([form/1, form/2, form/4, form/5]).
+-export([url_spec/1, url_spec/2, url_spec/4, url_spec/5]).
 
 %% raw URL and URL broken into parts
 -export_type([url/0, url_spec/0]).
@@ -97,6 +98,57 @@ form(Host, Port) ->
 
 form({Protocol, Creds, Host, Port, Path} = _URLSpec) ->
   form(Protocol, Creds, Host, Port, Path).
+
+%%% }}}
+%%%---------------------------------------------------------------------------
+%%% defaults for url_spec() {{{
+
+%% @doc Fill `url_spec()' tuple with defaults.
+%%   The tuple is compatible with the one returned by {@link parse/1}.
+%%
+%% @spec url_spec(protocol(), credentials(), hostname(), portnum() | default,
+%%                string()) ->
+%%   url_spec()
+
+url_spec(Protocol, Creds, Host, Port, Path) ->
+  case Creds of
+    {_User, _Pass} -> ok;
+    none -> ok
+    % else error(case_clause)
+  end,
+  PortNumeric = case {Protocol, Port} of
+    {http,  default} -> 80;
+    {https, default} -> 443;
+    {_Any,  _Number} -> Port
+  end,
+  {Protocol, Creds, Host, PortNumeric, Path}.
+
+%% @equiv url_spec(Protocol, none, Host, Port, Path)
+%% @see   url_spec/5
+%%
+%% @spec url_spec(protocol(), hostname(), portnum() | default, string()) ->
+%%   url_spec()
+
+url_spec(Protocol, Host, Port, Path) ->
+  url_spec(Protocol, none, Host, Port, Path).
+
+%% @equiv url_spec(http, Host, Port, "/")
+%% @see   url_spec/5
+%%
+%% @spec url_spec(hostname(), portnum() | default) ->
+%%   url_spec()
+
+url_spec(Host, Port) ->
+  url_spec(http, Host, Port, "/").
+
+%% @equiv url_spec(Host, default)
+%% @see   url_spec/5
+%%
+%% @spec url_spec(hostname()) ->
+%%   url_spec()
+
+url_spec(Host) ->
+  url_spec(Host, default).
 
 %%% }}}
 %%%---------------------------------------------------------------------------
