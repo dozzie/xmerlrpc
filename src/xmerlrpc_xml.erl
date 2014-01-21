@@ -287,22 +287,32 @@ decode_document(#xmlElement{ name = methodCall, content = Children }) ->
   case [E || #xmlElement{} = E <- Children] of
     [#xmlElement{name = methodName, content = [#xmlText{value = Name}]},
       #xmlElement{name = params, content = Params}] ->
-      ParamsDecoded = [
-        decode_value(extract_child(ValE)) ||
-        #xmlElement{name = param, content = ParamE} = _P <- Params,
-        #xmlElement{name = value, content = ValE}   = _V <- ParamE
-      ],
-      % FIXME: ParamsDecoded can contain `{error,E}'
-      {ok, request, {list_to_binary(Name), ParamsDecoded}};
+      try
+        ParamsDecoded = [
+          % decode_value_rec() doesn't catch "badly formed XML" tuples
+          decode_value_rec(extract_child(ValE)) ||
+          #xmlElement{name = param, content = ParamE} = _P <- Params,
+          #xmlElement{name = value, content = ValE}   = _V <- ParamE
+        ],
+        {ok, request, {list_to_binary(Name), ParamsDecoded}}
+      catch
+        throw:{error,  E} ->
+          {error, E}
+      end;
     [#xmlElement{name = params, content = Params},
       #xmlElement{name = methodName, content = [#xmlText{value = Name}]}] ->
-      ParamsDecoded = [
-        decode_value(extract_child(ValE)) ||
-        #xmlElement{name = param, content = ParamE} = _P <- Params,
-        #xmlElement{name = value, content = ValE}   = _V <- ParamE
-      ],
-      % FIXME: ParamsDecoded can contain `{error,E}'
-      {ok, request, {list_to_binary(Name), ParamsDecoded}};
+      try
+        ParamsDecoded = [
+          % decode_value_rec() doesn't catch "badly formed XML" tuples
+          decode_value_rec(extract_child(ValE)) ||
+          #xmlElement{name = param, content = ParamE} = _P <- Params,
+          #xmlElement{name = value, content = ValE}   = _V <- ParamE
+        ],
+        {ok, request, {list_to_binary(Name), ParamsDecoded}}
+      catch
+        throw:{error,  E} ->
+          {error, E}
+      end;
     _Any ->
       {error, bad_xml_structure}
   end;
