@@ -61,7 +61,7 @@ result(Result, _Opts) ->
 %% @doc Create XML-RPC exception document.
 %%
 %% @TODO
-%%   Make `Message' iolist() instead of binary()
+%%   Allow `Message' to be iolist().
 %%
 %% @spec exception(integer(), binary(), Opts) ->
 %%   iolist()

@@ -21,8 +21,6 @@
 -export([request/3, result/2, exception/3]).
 -export([parse/2, parse_request/2, parse_response/2]).
 
--export([decode_document/1]).
-
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
@@ -34,6 +32,22 @@
 
 -type proc_arg() :: jsx_array() | jsx_hash() | jsx_scalar().
 
+%%----------------------------------------------------------
+%% parsed XML-RPC documents {{{
+
+%% @type xmlrpc_request() = {proc_name(), [proc_arg()]}.
+
+-type xmlrpc_request() :: {proc_name(), [proc_arg()]}.
+
+%% @type xmlrpc_result() = term().
+
+-type xmlrpc_result() :: proc_arg().
+
+%% @type xmlrpc_exception() = {Code :: integer(), Message :: string()}.
+
+-type xmlrpc_exception() :: {Code :: integer(), Message :: string()}.
+
+%% }}}
 %%----------------------------------------------------------
 %% jsx-style types {{{
 
@@ -98,7 +112,7 @@ result(Result, _Opts) ->
 %% @doc Form XML document carrying exception information (function reply).
 %%
 %% @TODO
-%%   Make `Message' iolist() instead of binary().
+%%   Allow `Message' to be iolist().
 %%
 %% @spec exception(integer(), binary(), Opts) ->
 %%   iolist()
@@ -115,9 +129,12 @@ exception(Code, Message, _Opts) ->
 
 %%% }}}
 %%%---------------------------------------------------------------------------
-%%% XML parsing (TODO) {{{
+%%% XML parsing {{{
 
 %% @doc Parse XML message to request, result or exception.
+%%
+%% @TODO
+%%   Rewrite this to SAX-style parser.
 %%
 %% @spec parse(binary() | string(), Opts) ->
 %%     {ok, request,   Request :: any()}
@@ -249,31 +266,51 @@ name_to_string(Name) when is_binary(Name) orelse is_list(Name) ->
 %%----------------------------------------------------------
 %% decode_document(D) {{{
 
-%% TODO: rewrite this to SAX-style parser
+%% @doc Decode XML-RPC request or response document.
+%%
+%%   Note that exception raised on server side is returned as a well-formed
+%%   XML response. This is `{ok, exception, ...}' case.
+%%
+%%   `{error, Reason}' is only returned when error in XML was found, not when
+%%   remote procedure failed, and indicates protocol error instead of
+%%   application error.
+%%
+%% @spec decode_document(XMLElement :: #xmlElement{}) ->
+%%     {ok, request,   xmlrpc_request()}
+%%   | {ok, result,    xmlrpc_result()}
+%%   | {ok, exception, xmlrpc_exception()}
+%%   | {error, Reason}
 
 decode_document(#xmlElement{ name = methodCall, content = Children }) ->
-  case Children of
+  % for method call, two children to expect: `<methodName/>' and `<params/>',
+  % in any order(?)
+  case [E || #xmlElement{} = E <- Children] of
     [#xmlElement{name = methodName, content = [#xmlText{value = Name}]},
       #xmlElement{name = params, content = Params}] ->
-      {ok, request, {Name, Params}};
+      % TODO: decode Params
+      {ok, request, {list_to_binary(Name), Params}};
     [#xmlElement{name = params, content = Params},
       #xmlElement{name = methodName, content = [#xmlText{value = Name}]} ] ->
-      {ok, request, {Name, Params}};
+      % TODO: decode Params
+      {ok, request, {list_to_binary(Name), Params}};
     _Any ->
       {error, bad_xml_structure}
   end;
 
 decode_document(#xmlElement{name = methodResponse, content = TopChildren}) ->
-  % filter out #xmlText{}, leave just #xmlElement{} children
+  % either `<params/>' (successful call) or `<fault/>' (exception)
   case [E || #xmlElement{} = E <- TopChildren] of
     [#xmlElement{name = params, content = Children}] ->
+      % decoding requires stripping non-tag children
       case decode_results([E || #xmlElement{} = E <- Children]) of
         {error, _Reason} = Error ->
+          % decode_results() normally doesn't return tuple
           Error;
         Result ->
           {ok, result, Result}
       end;
     [#xmlElement{name = fault, content = Children}] ->
+      % decoding requires stripping non-tag children
       case decode_faults([E || #xmlElement{} = E <- Children]) of
         {error, _Reason} = Error ->
           Error;
@@ -283,6 +320,15 @@ decode_document(#xmlElement{name = methodResponse, content = TopChildren}) ->
     _Any ->
       {error, bad_xml_structure}
   end.
+
+
+%% @doc Decode XML-RPC (successful call) reply.
+%%
+%%   Expect content of `<params/>' tag (i.e. single `<param/>').
+%%
+%% @spec decode_results(XMLElement :: #xmlElement{}) ->
+%%     {ok, result,    xmlrpc_result()}
+%%   | {error, Reason}
 
 decode_results([#xmlElement{name = param, content = Children}] = _Elements) ->
   case [E || #xmlElement{name = value} = E <- Children] of
@@ -299,6 +345,15 @@ decode_results([#xmlElement{name = param, content = Children}] = _Elements) ->
   end;
 decode_results(_Any) ->
   {error, bad_xml_structure}.
+
+%% @doc Decode XML-RPC exception.
+%%
+%%   Expect content of `<fault/>' tag (i.e. single `<struct/>' with two
+%%   members: `faultString' and `faultCode', in any order).
+%%
+%% @spec decode_faults(XMLElement :: #xmlElement{}) ->
+%%     {ok, exception, xmlrpc_exception()}
+%%   | {error, Reason}
 
 decode_faults([#xmlElement{name = value, content = Children}] = _Elements) ->
   case [E || #xmlElement{} = E <- Children] of
@@ -318,16 +373,28 @@ decode_faults([#xmlElement{name = value, content = Children}] = _Elements) ->
 decode_faults(_Any) ->
   {error, bad_xml_structure}.
 
+%% @doc Decode single value (top-level function).
+%%
+%%   This function calls {@link decode_value_rec/1} and catches any error, to
+%%   make error messages more readable.
+%%
+%% @spec decode_value(XMLElement :: #xmlElement{}) ->
+%%   proc_arg() | {error, Reason}
+
 decode_value(V) ->
   try
     decode_value_rec(V)
   catch
-    throw:{result, R} -> R;
-    throw:{error,  E} -> {error, E};
+    throw:{error,  E} ->
+      {error, E};
     error:_Any ->
-      io:fwrite("!! ~p~n", [_Any]),
       {error, bad_xml}
   end.
+
+%% @doc Decode single value (scalar, array or struct) recursively.
+%%
+%% @spec decode_value_rec(XMLElement :: #xmlElement{}) ->
+%%   proc_arg()
 
 decode_value_rec(#xmlElement{name = i4} = E) ->
   decode_int(E);
@@ -350,27 +417,67 @@ decode_value_rec(#xmlElement{name = struct} = E) ->
 decode_value_rec(#xmlElement{name = array} = E) ->
   decode_array(E).
 
+%% @doc Decode integer value.
+%%
+%% @spec decode_int(XMLElement :: #xmlElement{}) ->
+%%   integer()
+
 decode_int(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
   list_to_integer(Value).
+
+%% @doc Decode boolean value.
+%%
+%% @spec decode_boolean(XMLElement :: #xmlElement{}) ->
+%%   boolean()
+
 decode_boolean(#xmlElement{content = [#xmlText{value = "0"}]} = _V) ->
   false;
 decode_boolean(#xmlElement{content = [#xmlText{value = "1"}]} = _V) ->
   true.
+
+%% @doc Decode string value.
+%%
+%% @spec decode_string(XMLElement :: #xmlElement{}) ->
+%%   binary()
+
 decode_string(#xmlElement{content = []} = _V) ->
   <<>>;
 decode_string(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
   list_to_binary(Value).
+
+%% @doc Decode double value.
+%%
+%% @spec decode_double(XMLElement :: #xmlElement{}) ->
+%%   float()
+
 decode_double(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
   list_to_float(Value).
+
 %decode_dateTime_iso8601(V) -> V.
 %decode_base64(V) -> V.
+
+%% @doc Decode null value.
+%%
+%% @spec decode_nil(XMLElement :: #xmlElement{}) ->
+%%   null
+
 decode_nil(_V) ->
   null.
 
+%% XXX: unused, left as a comment for completeness
 %% ```
 %%   <value> ... </value>
 %% '''
 %decode_scalar(V) -> V.
+
+%% @doc Decode struct (sequence of key-value pairs).
+%%
+%%   Function recursively decodes struct content.
+%%
+%% @spec decode_struct(XMLElement :: #xmlElement{}) ->
+%%   [{}] | [{Key :: binary(), Value :: proc_arg()}]
+%%
+%% @end
 
 %% ```
 %%   <struct>
@@ -385,10 +492,20 @@ decode_struct(#xmlElement{content = MembersText} = _V) ->
   Members = [M || #xmlElement{name = member} = M <- MembersText],
   case Members of
     [] -> [{}];
-    _  -> [extract_member(M) || M <- Members]
+    _  -> [extract_struct_member(M) || M <- Members]
   end.
 
-extract_member(#xmlElement{content = NameValueText} = _Member) ->
+%% @doc Extract and decode single key-value pair in struct.
+%%
+%%   Function recursively decodes value.
+%%
+%%   Function throws `{error, bad_xml_structure}' when XML document is not
+%%   well-formed.
+%%
+%% @spec extract_struct_member(XMLElement :: #xmlElement{}) ->
+%%   {Key :: binary(), Value :: proc_arg()}
+
+extract_struct_member(#xmlElement{content = NameValueText} = _Member) ->
   NameValue = [E || #xmlElement{} = E <- NameValueText],
   case NameValue of
     [NameE, #xmlElement{name = value, content = Children} = _ValueE] ->
@@ -397,6 +514,15 @@ extract_member(#xmlElement{content = NameValueText} = _Member) ->
       {Name, Value};
     _Any -> throw({error, bad_xml_structure})
   end.
+
+%% @doc Decode array (sequence of values).
+%%
+%%   Function recursively decodes array content.
+%%
+%% @spec decode_array(XMLElement :: #xmlElement{}) ->
+%%   [proc_arg()]
+%%
+%% @end
 
 %% ```
 %%   <array>
@@ -414,6 +540,15 @@ decode_array(#xmlElement{content = ArrayData} = _V) ->
   ],
   Values.
 
+%% @doc Extract the single child from list of children (or throw an error).
+%%
+%%   Function clears any `#xmlText{}', leaving `#xmlElement{}' elements.
+%%
+%%   If result contains just one element, that element is returned. Otherwise,
+%%   function throws `{error, bad_xml_structure}' tuple.
+%%
+%% @spec extract_child([xml_node()]) ->
+%%   #xmlElement{}
 
 extract_child(Children) ->
   case [E || #xmlElement{} = E <- Children] of
