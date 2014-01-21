@@ -54,6 +54,8 @@
 
 %% @doc Split URL to protocol, host, port, path, and credentials.
 %%
+%%   Port is always returned as a number.
+%%
 %%   Note that URL arguments (`?foo=...') are treated as a part of path.
 %%
 %% @spec parse(url()) ->
@@ -113,7 +115,11 @@ parse_real(URL) ->
   end,
 
   {Host, Port} = case string:chr(HostPort, $:) of
-    0  -> {HostPort, default};
+    0  ->
+      case Proto of
+        http  -> {HostPort, 80};
+        https -> {HostPort, 443}
+      end;
     P4 -> {
       string:substr(HostPort, 1, P4-1),
       list_to_integer(string:substr(HostPort, P4+1))
