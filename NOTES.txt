@@ -1,0 +1,46 @@
+== Options ==
+
+  * address
+    * {url, "http://..."}
+    * {host, ...}, {port, ...} -- port defaults to 443 if ''ssl_verify'' also
+      specified (even with ''false'')
+  * SSL
+    * {ssl_verify, true | false | fun()}, {ssl_ca, ...}
+  * TCP
+    * {tcp_keepalive, true | Interval}
+    * {timeout, infinity | integer()} -- spawn_link(), timer:sleep(), exit()
+  * HTTP
+    * {creds, term()} (also parsed out of URL; this option has precedence)
+    * {retry, fun()}
+      * called on HTTP error
+      * args: Code, Headers = {Req, Resp}, Body, RetryCount, CallOpts
+      * returns:
+        * stop | {stop, Reason} -- custom error
+        * retry | {retry, After}
+        * {retry, Headers} | {retry, After, Headers} (original headers with
+          names colliding with Headers are removed, rest is preserved)
+    * {http_client, ...}
+      * atom() -- callback module name
+      * fun(): (URLSpec, Headers, Body) -> Reply = {Code, Headers, Body}
+      * defaults to ''xmerlrpc_http_client''
+
+== TODO ==
+
+  * options support
+  * Jiffy-style data structures support (there's only jsx for now)
+  * typespecs
+  * tests (possibly using etap)
+  * xmerlrpc_xml:
+    * check code correctness in case of UTF-8
+    * request(), result(), exception(): try/catch
+    * internals: return `{ok,Result}` instead of just `Result`
+    * internals: split XML parser and XML producer to separate modules
+    * XML parser: rewrite with leex+yecc?
+  * xmerlrpc:
+    * http_request(), http_response()
+    * dispatch(), route(), apply()
+  * built-in HTTP client:
+    * HTTP authentication (basic + digest)
+    * HTTP proxy (+ authentication?)
+    * SSL support, including SSL certificate verification
+    * HTTP cookies?
