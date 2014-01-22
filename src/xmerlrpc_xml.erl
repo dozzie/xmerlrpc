@@ -113,13 +113,11 @@ result(Result, _Opts) ->
 
 %% @doc Form XML document carrying exception information (function reply).
 %%
-%% @TODO
-%%   Allow `Message' to be iolist().
-%%
-%% @spec exception(integer(), binary(), Opts) ->
+%% @spec exception(integer(), iolist(), Opts) ->
 %%   iolist()
 
-exception(Code, Message, _Opts) ->
+exception(Code, MessageIOL, _Opts) ->
+  Message = iolist_to_binary(MessageIOL),
   XMLResponse = e(methodResponse, [
     e(fault, [
       e(value, [

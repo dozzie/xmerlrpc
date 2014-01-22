@@ -95,9 +95,8 @@ get_host_port_proto(Opts) ->
 %% @spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], Opts) ->
 %%   iolist()
 
-request(Proc, Args, _Opts) ->
-  % TODO: pass options
-  xmerlrpc_xml:request(Proc, Args, []).
+request(Proc, Args, Opts) ->
+  xmerlrpc_xml:request(Proc, Args, Opts).
 
 %% @doc Create XML-RPC response document carrying result data returned by the
 %%   function.
@@ -106,22 +105,17 @@ request(Proc, Args, _Opts) ->
 %% @spec result(term(), Opts) ->
 %%   iolist()
 
-result(Result, _Opts) ->
-  % TODO: pass options
-  xmerlrpc_xml:result(Result, []).
+result(Result, Opts) ->
+  xmerlrpc_xml:result(Result, Opts).
 
 %% @doc Create XML-RPC exception document.
 %% @see xmerlrpc_xml:exception/3
 %%
-%% @TODO
-%%   Allow `Message' to be iolist().
-%%
-%% @spec exception(integer(), binary(), Opts) ->
+%% @spec exception(integer(), iolist(), Opts) ->
 %%   iolist()
 
-exception(Code, Message, _Opts) ->
-  % TODO: pass options
-  xmerlrpc_xml:exception(Code, Message, []).
+exception(Code, Message, Opts) ->
+  xmerlrpc_xml:exception(Code, Message, Opts).
 
 %%% }}}
 %%%---------------------------------------------------------
@@ -136,9 +130,8 @@ exception(Code, Message, _Opts) ->
 %%   | {ok, exception, Message :: any()}
 %%   | {error, Reason}
 
-parse(XMLDocument, _Opts) ->
-  % TODO: pass options
-  xmerlrpc_xml:parse(XMLDocument, []).
+parse(XMLDocument, Opts) ->
+  xmerlrpc_xml:parse(XMLDocument, Opts).
 
 %% @doc Parse XML message to request.
 %% @see xmerlrpc_xml:parse_request/2
@@ -147,9 +140,8 @@ parse(XMLDocument, _Opts) ->
 %%     {ok, request, Request :: any()}
 %%   | {error, Reason}
 
-parse_request(XMLDocument, _Opts) ->
-  % TODO: pass options
-  xmerlrpc_xml:parse_request(XMLDocument, []).
+parse_request(XMLDocument, Opts) ->
+  xmerlrpc_xml:parse_request(XMLDocument, Opts).
 
 %% @doc Parse XML message to result or exception.
 %% @see xmerlrpc_xml:parse_response/2
@@ -159,9 +151,8 @@ parse_request(XMLDocument, _Opts) ->
 %%   | {ok, exception, Message :: any()}
 %%   | {error, Reason}
 
-parse_response(XMLDocument, _Opts) ->
-  % TODO: pass options
-  xmerlrpc_xml:parse_response(XMLDocument, []).
+parse_response(XMLDocument, Opts) ->
+  xmerlrpc_xml:parse_response(XMLDocument, Opts).
 
 %%% }}}
 %%%---------------------------------------------------------
