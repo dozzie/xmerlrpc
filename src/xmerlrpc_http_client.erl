@@ -41,7 +41,7 @@
 
 %% @doc Connect to HTTP server, send a request and retrieve response.
 %%
-%% @spec request(get | post, URL :: url(), [http_header()], binary(), Opts) ->
+%% @spec request(get | post, URL :: url(), [http_header()], iolist(), Opts) ->
 %%   {ok, http_response()} | {error, Reason}
 
 request(Method, URL, Headers, Body, Opts) when is_list(URL) ->
@@ -197,7 +197,7 @@ send_http_headers(Sock, [{Name, Value} | Rest] = _Headers) ->
 %%
 %%   When `Body = none', no <i>Content-Length</i> is sent, of course.
 %%
-%% @spec send_http_body(socket(), binary() | none) ->
+%% @spec send_http_body(socket(), iolist() | none) ->
 %%   ok
 
 send_http_body(Sock, none = _Body) ->
@@ -205,7 +205,7 @@ send_http_body(Sock, none = _Body) ->
 send_http_body(Sock, <<>> = _Body) ->
   ok = send(Sock, "\r\n");
 send_http_body(Sock, Body) ->
-  Length = integer_to_list(byte_size(Body)),
+  Length = integer_to_list(iolist_size(Body)),
   ok = send(Sock, ["Content-Length: ", Length, "\r\n"]),
   ok = send(Sock, "\r\n"),
   ok = send(Sock, Body).
@@ -353,7 +353,7 @@ get(URL, Headers, Opts) ->
 
 %% @doc Send GET request and retrieve response.
 %%
-%% @spec get(url(), [http_header()], binary(), Opts) ->
+%% @spec get(url(), [http_header()], iolist(), Opts) ->
 %%   {ok, http_response()} | {error, Reason}
 
 get(URL, Headers, Body, Opts) ->
@@ -381,7 +381,7 @@ post(URL, Headers, Opts) ->
 
 %% @doc Send POST request and retrieve response.
 %%
-%% @spec post(url(), [http_header()], binary(), Options) ->
+%% @spec post(url(), [http_header()], iolist(), Options) ->
 %%   {ok, http_response()} | {error, Reason}
 
 post(URL, Headers, Body, Opts) ->
