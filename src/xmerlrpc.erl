@@ -30,8 +30,57 @@
 %% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], Opts) ->
 %%   term()
 
-call(_Proc, _Args, _Opts) ->
-  'TODO'.
+call(Proc, Args, Opts) ->
+  URLSpec = case proplists:get_value(url, Opts) of
+    undefined ->
+      get_host_port_proto(Opts);
+    URL ->
+      xmerlrpc_url:parse(URL)
+  end,
+
+  RequestBody = request(Proc, Args, Opts),
+
+  {ok, {_Headers, ResponseBody}} =
+    case proplists:get_value(http_client, Opts, xmerlrpc_http_client) of
+      HTTPClient when is_atom(HTTPClient) ->
+        HTTPClient:post(
+          URLSpec, [{<<"Content-Type">>, <<"text/xml">>}], RequestBody, Opts
+        );
+      HTTPClient when is_function(HTTPClient) ->
+        HTTPClient(
+          URLSpec, [{<<"Content-Type">>, <<"text/xml">>}], RequestBody
+        )
+    end,
+
+  case parse_response(ResponseBody, Opts) of
+    {ok, result, Result} ->
+      Result;
+    {ok, exception, Message} ->
+      erlang:error({remote_exception, Message});
+    {error, _Reason} = Error ->
+      erlang:error(Error)
+  end.
+
+%% @doc Construct {@link xmerlrpc_url:url_spec/0} out of options proplist.
+%%
+%%   Function to be used when no `{url,URL}' tuple was present in options.
+%%
+%% @spec get_host_port_proto(Opts) ->
+%%   xmerlrpc_url:url_spec()
+
+get_host_port_proto(Opts) ->
+  Host = case proplists:get_value(host, Opts) of
+    undefined -> erlang:error(no_host);
+    Hostname  -> Hostname
+  end,
+  Port = proplists:get_value(port, Opts, default),
+  Proto = case proplists:is_defined(ssl_verify, Opts) orelse
+       proplists:is_defined(ssl_ca, Opts) of
+    true  -> https;
+    false -> http
+  end,
+  URLSpec = xmerlrpc_url:url_spec(Proto, Host, Port, "/"),
+  URLSpec.
 
 %%% }}}
 %%%---------------------------------------------------------------------------

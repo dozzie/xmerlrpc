@@ -5,7 +5,8 @@
     * {host, ...}, {port, ...} -- port defaults to 443 if ''ssl_verify'' also
       specified (even with ''false'')
   * SSL
-    * {ssl_verify, true | false | fun()}, {ssl_ca, ...}
+    * {ssl_verify, true | false | fun()}
+    * {ssl_ca, ...}
   * TCP
     * {tcp_keepalive, true | Interval}
     * {timeout, infinity | integer()} -- spawn_link(), timer:sleep(), exit()
@@ -21,7 +22,7 @@
           names colliding with Headers are removed, rest is preserved)
     * {http_client, ...}
       * atom() -- callback module name
-      * fun(): (URLSpec, Headers, Body) -> Reply = {Code, Headers, Body}
+      * fun(): (URLSpec, Headers, Body) -> Reply = {ok, {Headers, Body}}
       * defaults to ''xmerlrpc_http_client''
 
 == TODO ==
