@@ -2,7 +2,7 @@
   {description, "XML-RPC client and server"},
   {vsn, "0.0.0"},
   {registered, []},
-  {applications, [kernel, stdlib, xmerl]},
+  {applications, [kernel, stdlib, xmerl, ssl]},
   %{mod, { xmerlrpc_app, []}}, % callback module
   {env, []}
 ]}.
