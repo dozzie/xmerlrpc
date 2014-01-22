@@ -222,7 +222,7 @@ send_http_body(Sock, Body) ->
 %%
 %% @spec read_http_response(socket()) ->
 %%   {Code :: integer(), Status :: binary(),
-%%    Headers :: [http_header()], Body :: binary()}
+%%     Headers :: [http_header()], Body :: iolist()}
 
 read_http_response(Sock) ->
   {ok, {Code, Status}} = recv_code(Sock),
@@ -273,7 +273,7 @@ read_http_headers(Sock) ->
 %%
 %%   For cases when server sent <i>Content-Length</i> header.
 %%
-%% @spec read_http_body_size(socket(), integer()) ->
+%% @spec read_http_body_size(socket(), Size :: integer()) ->
 %%   iolist()
 
 read_http_body_size(_Sock, 0) ->
@@ -314,7 +314,8 @@ read_http_body_chunked(Sock) ->
 %% @doc Read body of HTTP response.
 %%
 %%   For cases when no content length is known in advance. In such cases the
-%%   socket will be closed after reading the body.
+%%   socket will be in EOF condition after reading the body (user still needs
+%%   to call {@link close_http/1}).
 %%
 %% @spec read_http_body_till_eof(socket()) ->
 %%   iolist()
