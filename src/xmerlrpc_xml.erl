@@ -6,12 +6,9 @@
 %%%   <a href="http://www.erlang.org/eeps/eep-0018.html">EEP-18</a>
 %%%   structures.
 %%%
-%%% @TODO
-%%%   Jiffy-like structures.
-%%% @TODO
-%%%   Split forming and parsing XML to separate modules.
-%%% @TODO
-%%%   Cleanup types documentation.
+%%% @TODO Jiffy-like structures.
+%%% @TODO Split forming and parsing XML to separate modules.
+%%% @TODO Cleanup types documentation.
 %%%
 %%% @end
 %%%---------------------------------------------------------------------------
@@ -133,8 +130,7 @@ exception(Code, MessageIOL, _Opts) ->
 
 %% @doc Parse XML message to request, result or exception.
 %%
-%% @TODO
-%%   Rewrite this to SAX-style parser.
+%% @TODO Rewrite this to SAX-style parser.
 %%
 %% @spec parse(binary() | string(), Opts) ->
 %%     {ok, request,   Request :: any()}
@@ -194,8 +190,7 @@ parse_response(XML, Opts) ->
 
 %% @doc Recursively convert value to XML node for exporting through xmerl.
 %%
-%% @TODO
-%%   base64 support
+%% @TODO base64 support
 %%
 %% @spec encode_value(Value :: proc_arg()) ->
 %%   #xmlElement{}

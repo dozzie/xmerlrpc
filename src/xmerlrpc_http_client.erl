@@ -2,8 +2,7 @@
 %%% @doc
 %%%   Simple and dumb HTTP client for xmerlrpc.
 %%%
-%%% @TODO
-%%%   SSL/TLS options (e.g. certificate verification).
+%%% @TODO SSL/TLS options (e.g. certificate verification).
 %%%
 %%% @end
 %%%---------------------------------------------------------------------------
@@ -55,7 +54,7 @@ request(Method, {Proto, _Creds, Host, Port, Path}, Headers, Body, _Opts) ->
     https -> open_https(Host, Port)
   end,
 
-  % TODO: Connection: keep-alive + re
+  % TODO: Connection: keep-alive + retries
   % TODO: credentials
   send_http_method(Sock, Method, Path),
   send_http_headers(Sock, [{"Host", Host}, {"Connection", "close"} | Headers]),
