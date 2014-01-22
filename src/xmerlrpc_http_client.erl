@@ -3,7 +3,7 @@
 %%%   Simple and dumb HTTP client for xmerlrpc.
 %%%
 %%% @TODO
-%%%   SSL/TLS support.
+%%%   SSL/TLS options (e.g. certificate verification).
 %%%
 %%% @end
 %%%---------------------------------------------------------------------------
@@ -31,9 +31,9 @@
 
 -type http_header() :: {binary(), binary()}.
 
-%% @type socket() = term().
+%% @type socket().
 
--type socket() :: term().
+-opaque socket() :: {Type :: atom(), ssl:sslsocket() | gen_tcp:socket()}.
 
 %%% }}}
 %%%---------------------------------------------------------------------------
@@ -85,7 +85,9 @@ request(Method, {Proto, _Creds, Host, Port, Path}, Headers, Body, _Opts) ->
 open_http(Host, default) ->
   open_http(Host, 80);
 open_http(Host, Port) ->
-  gen_tcp:connect(Host, Port, [{active, false}, {packet, http_bin}]).
+  TCPOpts = [{packet, line}, {active, false}, binary],
+  {ok, Sock} = gen_tcp:connect(Host, Port, TCPOpts),
+  {ok, {gen_tcp, Sock}}.
 
 %% @doc Open HTTPs (SSL/TLS) connection to specified host.
 %%   Port defaults to 443.
@@ -95,16 +97,72 @@ open_http(Host, Port) ->
 
 open_https(Host, default) ->
   open_https(Host, 443);
-open_https(_Host, _Port) ->
-  {error, unimplemented}.
+open_https(Host, Port) ->
+  SSLOpts = [{packet, line}, {active, false}, binary],
+  {ok, Sock} = ssl:connect(Host, Port, SSLOpts),
+  {ok, {ssl, Sock}}.
 
 %% @doc Close HTTP (unencrypted) connection.
 %%
 %% @spec close_http(socket()) ->
 %%   ok
 
-close_http(Sock) ->
-  gen_tcp:close(Sock).
+close_http({Mod, S} = _Sock) ->
+  Mod:close(S).
+
+%% @doc Send chunk of data through socket.
+%%
+%% @spec send(socket(), iolist()) ->
+%%   ok | {error, Reason}
+
+send({Mod, S} = _Sock, Data) ->
+  Mod:send(S, Data).
+
+%% @doc Read HTTP status line from socket.
+%%
+%% @spec recv_code(socket()) ->
+%%   {ok, {Code :: integer(), Status :: binary()}} | {error, Reason}
+
+recv_code({Mod, S} = _Sock) ->
+  {ok, Line} = Mod:recv(S, 0),
+  case erlang:decode_packet(http_bin, Line, []) of
+    {ok, {http_response, _HTTPVer, Code, Status}, <<>>} ->
+      {ok, {Code, Status}};
+    {error, _Reason} = Error ->
+      Error
+  end.
+
+%% @doc Read HTTP header from socket.
+%%
+%%   For headers returned as atoms, see erlang:decode_packet/3
+%%
+%% @spec recv_header(socket()) ->
+%%     {ok, {Name :: binary() | atom(), Value :: binary()}}
+%%   | {ok, http_eoh}
+%%   | {error, Reason}
+
+recv_header({Mod, S} = _Sock) ->
+  {ok, Line} = Mod:recv(S, 0),
+  % XXX: period after `Line' is artificial thing required at least under R14A
+  % for decode_packet() not to return `{more,Length}'
+  case erlang:decode_packet(httph_bin, <<Line/binary, ".">>, []) of
+    {ok, {http_header, _HNum, HName, _Reserved, HValue}, <<".">>} ->
+      {ok, {HName, HValue}};
+    {ok, http_eoh, <<".">>} ->
+      {ok, http_eoh};
+    {more, _Length} ->
+      {error, packet_too_short};
+    {error, _Reason} = Error ->
+      Error
+  end.
+
+%% @doc Read single (payload) line from socket.
+%%
+%% @spec recv_line(socket()) ->
+%%   {ok, binary()} | {error, Reason}
+
+recv_line({Mod, S} = _Sock) ->
+  Mod:recv(S, 0).
 
 %% }}}
 %%----------------------------------------------------------
@@ -116,9 +174,9 @@ close_http(Sock) ->
 %%   ok
 
 send_http_method(Sock, get, Path) ->
-  ok = gen_tcp:send(Sock, ["GET ", Path, " HTTP/1.1\r\n"]);
+  ok = send(Sock, ["GET ", Path, " HTTP/1.1\r\n"]);
 send_http_method(Sock, post, Path) ->
-  ok = gen_tcp:send(Sock, ["POST ", Path, " HTTP/1.1\r\n"]).
+  ok = send(Sock, ["POST ", Path, " HTTP/1.1\r\n"]).
 
 %% @doc Send headers of HTTP request.
 %%   Function doesn't send <i>end of headers</i> marker, so it's still
@@ -130,7 +188,7 @@ send_http_method(Sock, post, Path) ->
 send_http_headers(_Sock, [] = _Headers) ->
   ok;
 send_http_headers(Sock, [{Name, Value} | Rest] = _Headers) ->
-  ok = gen_tcp:send(Sock, [Name, ": ", Value, "\r\n"]),
+  ok = send(Sock, [Name, ": ", Value, "\r\n"]),
   send_http_headers(Sock, Rest).
 
 %% @doc Send body of HTTP request.
@@ -143,14 +201,14 @@ send_http_headers(Sock, [{Name, Value} | Rest] = _Headers) ->
 %%   ok
 
 send_http_body(Sock, none = _Body) ->
-  ok = gen_tcp:send(Sock, "\r\n");
+  ok = send(Sock, "\r\n");
 send_http_body(Sock, <<>> = _Body) ->
-  ok = gen_tcp:send(Sock, "\r\n");
+  ok = send(Sock, "\r\n");
 send_http_body(Sock, Body) ->
   Length = integer_to_list(byte_size(Body)),
-  ok = gen_tcp:send(Sock, ["Content-Length: ", Length, "\r\n"]),
-  ok = gen_tcp:send(Sock, "\r\n"),
-  ok = gen_tcp:send(Sock, Body).
+  ok = send(Sock, ["Content-Length: ", Length, "\r\n"]),
+  ok = send(Sock, "\r\n"),
+  ok = send(Sock, Body).
 
 %% }}}
 %%----------------------------------------------------------
@@ -168,7 +226,7 @@ send_http_body(Sock, Body) ->
 %%    Headers :: [http_header()], Body :: binary()}
 
 read_http_response(Sock) ->
-  {ok, {http_response, _HTTPVer, Code, Status}} = gen_tcp:recv(Sock, 0),
+  {ok, {Code, Status}} = recv_code(Sock),
   Headers = read_http_headers(Sock),
   Body = case proplists:get_value(<<"Content-Length">>, Headers) of
     undefined ->
@@ -196,12 +254,12 @@ read_http_response(Sock) ->
 %%   [http_header()]
 
 read_http_headers(Sock) ->
-  case gen_tcp:recv(Sock, 0) of
-    {ok, {http_header, _N, Name, _Reserved, Value}} when is_atom(Name) ->
+  case recv_header(Sock) of
+    {ok, {Name, Value}} when is_atom(Name) ->
       % NOTE: `Name' has normalized case
       BinName = atom_to_binary(Name, utf8),
       [{BinName, Value} | read_http_headers(Sock)];
-    {ok, {http_header, _N, Name, _Reserved, Value}} ->
+    {ok, {Name, Value}} ->
       % NOTE: `Name' has normalized case
       [{Name, Value} | read_http_headers(Sock)];
     {ok, http_eoh} ->
@@ -222,12 +280,10 @@ read_http_headers(Sock) ->
 read_http_body_size(_Sock, 0) ->
   [];
 read_http_body_size(Sock, Size) when Size > 0 ->
-  case gen_tcp:recv(Sock, 0) of
-    {error, {http_error, Line}} ->
-      [Line | read_http_body_size(Sock, Size - byte_size(Line))]
-    % NOTE: if `{error,closed}' was encountered, throw an error (not all was
-    % read, as there's still `Size > 0')
-  end.
+  % NOTE: if `{error,closed}' was encountered, throw an error (not all was
+  % read, as there's still `Size > 0')
+  {ok, Line} = recv_line(Sock),
+  [Line | read_http_body_size(Sock, Size - byte_size(Line))].
 
 %% @doc Read body of HTTP response.
 %%
@@ -237,9 +293,9 @@ read_http_body_size(Sock, Size) when Size > 0 ->
 %%   iolist()
 
 read_http_body_chunked(Sock) ->
-  {error, {http_error, LineBin}} = gen_tcp:recv(Sock, 0),
-  LineLen = byte_size(LineBin) - 2,
-  <<ChunkSizeBin:LineLen/binary, "\r\n">> = LineBin, % make sure CRLF ending
+  {ok, Line} = recv_line(Sock),
+  LineLen = byte_size(Line) - 2,
+  <<ChunkSizeBin:LineLen/binary, "\r\n">> = Line, % make sure CRLF ending
   case ChunkSizeBin of
     <<"0", _Tail/binary>> ->
       % end-of-chunks
@@ -252,7 +308,7 @@ read_http_body_chunked(Sock) ->
       ChunkSize = erlang:list_to_integer(binary_to_list(ChunkSizeBin), 16),
       Chunk = read_http_body_size(Sock, ChunkSize),
       % chunk ends with CRLF
-      {error, {http_error, <<"\r\n">>}} = gen_tcp:recv(Sock, 0),
+      {ok, <<"\r\n">>} = recv_line(Sock),
       [Chunk | read_http_body_chunked(Sock)]
   end.
 
@@ -265,8 +321,8 @@ read_http_body_chunked(Sock) ->
 %%   iolist()
 
 read_http_body_till_eof(Sock) ->
-  case gen_tcp:recv(Sock, 0) of
-    {error, {http_error, Line}} ->
+  case recv_line(Sock) of
+    {ok, Line} ->
       [Line | read_http_body_till_eof(Sock)];
     {error, closed} ->
       []
