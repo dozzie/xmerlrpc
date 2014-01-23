@@ -20,6 +20,9 @@
 -export([request/3, result/2, exception/3]).
 -export([parse/2, parse_request/2, parse_response/2]).
 
+-export_type([proc_name/0, proc_arg/0]).
+-export_type([xmlrpc_request/0, xmlrpc_result/0, xmlrpc_exception/0]).
+
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
@@ -27,9 +30,13 @@
 
 -type proc_name() :: string() | binary() | atom().
 
-%% @type proc_arg() = jsx_array() | jsx_hash() | jsx_scalar().
+%% @type proc_arg() = jsx_value().
 
--type proc_arg() :: jsx_array() | jsx_hash() | jsx_scalar().
+-type proc_arg() :: jsx_value().
+
+%% @type optlist() = [{atom(), term()} | atom()].
+
+-type optlist() :: [{atom(), term()} | atom()].
 
 %%----------------------------------------------------------
 %% parsed XML-RPC documents {{{
@@ -38,9 +45,9 @@
 
 -type xmlrpc_request() :: {proc_name(), [proc_arg()]}.
 
-%% @type xmlrpc_result() = term().
+%% @type xmlrpc_result() = jsx_value().
 
--type xmlrpc_result() :: proc_arg().
+-type xmlrpc_result() :: jsx_value().
 
 %% @type xmlrpc_exception() = {Code :: integer(), Message :: string()}.
 
@@ -50,17 +57,25 @@
 %%----------------------------------------------------------
 %% jsx-style types {{{
 
-%% @type jsx_hash() = [{}] | [{proc_name(), proc_arg()}].
+%% @type jsx_value() = jsx_hash() | jsx_array() | jsx_value().
 
--type jsx_hash() :: [{}] | [{proc_name(), proc_arg()}, ...].
+-type jsx_value() :: jsx_hash() | jsx_array() | jsx_scalar().
 
-%% @type jsx_array() = [proc_arg()].
+%% @type jsx_hash() = [{}] | [{jsx_hash_key(), jsx_value()}].
 
--type jsx_array() :: [proc_arg()].
+-type jsx_hash() :: [{}] | [{jsx_hash_key(), jsx_value()}, ...].
+
+%% @type jsx_array() = [jsx_value()].
+
+-type jsx_array() :: [jsx_value()].
 
 %% @type jsx_scalar() = binary() | number() | null | true | false.
 
 -type jsx_scalar() :: binary() | number() | null | true | false.
+
+%% @type jsx_hash_key() = string() | binary() | atom().
+
+-type jsx_hash_key() :: string() | binary() | atom().
 
 %% }}}
 %%----------------------------------------------------------
@@ -81,8 +96,11 @@
 
 %% @doc Form XML document containing XML-RPC request (function call).
 %%
-%% @spec request(proc_name(), [proc_arg()], Opts) ->
+%% @spec request(proc_name(), [proc_arg()], optlist()) ->
 %%   iolist()
+
+-spec request(proc_name(), [proc_arg()], optlist()) ->
+  iolist().
 
 request(ProcName, ProcParams, _Opts) ->
   XMLCall = e(methodCall, [
@@ -93,8 +111,11 @@ request(ProcName, ProcParams, _Opts) ->
 
 %% @doc Form XML document carrying call result (function reply).
 %%
-%% @spec result(proc_arg(), Opts) ->
+%% @spec result(proc_arg(), optlist()) ->
 %%   iolist()
+
+-spec result(proc_arg(), optlist()) ->
+  iolist().
 
 result(Result, _Opts) ->
   XMLResponse = e(methodResponse, [
@@ -110,8 +131,11 @@ result(Result, _Opts) ->
 
 %% @doc Form XML document carrying exception information (function reply).
 %%
-%% @spec exception(integer(), iolist(), Opts) ->
+%% @spec exception(integer(), iolist(), optlist()) ->
 %%   iolist()
+
+-spec exception(integer(), iolist(), optlist()) ->
+  iolist().
 
 exception(Code, MessageIOL, _Opts) ->
   Message = iolist_to_binary(MessageIOL),
@@ -132,11 +156,17 @@ exception(Code, MessageIOL, _Opts) ->
 %%
 %% @TODO Rewrite this to SAX-style parser.
 %%
-%% @spec parse(binary() | string(), Opts) ->
-%%     {ok, request,   Request :: any()}
-%%   | {ok, result,    Result  :: any()}
-%%   | {ok, exception, Message :: any()}
+%% @spec parse(binary() | string(), optlist()) ->
+%%     {ok, request,   xmlrpc_request()}
+%%   | {ok, result,    xmlrpc_result()}
+%%   | {ok, exception, xmlrpc_exception()}
 %%   | {error, Reason}
+
+-spec parse(binary() | string(), optlist()) ->
+    {ok, request,   xmlrpc_request()}
+  | {ok, result,    xmlrpc_result()}
+  | {ok, exception, xmlrpc_exception()}
+  | {error, term()}.
 
 parse(XML, Opts) when is_binary(XML) ->
   parse(binary_to_list(XML), Opts);
@@ -146,9 +176,11 @@ parse(XML, _Opts) when is_list(XML) ->
 
 %% @doc Parse XML message to request.
 %%
-%% @spec parse_request(binary() | string(), Opts) ->
-%%     {ok, request, Request :: any()}
-%%   | {error, Reason}
+%% @spec parse_request(binary() | string(), optlist()) ->
+%%   {ok, request, xmlrpc_request()} | {error, Reason}
+
+-spec parse_request(binary() | string(), optlist()) ->
+  {ok, request, xmlrpc_request()} | {error, term()}.
 
 parse_request(XML, Opts) ->
   case parse(XML, Opts) of
@@ -164,10 +196,15 @@ parse_request(XML, Opts) ->
 
 %% @doc Parse XML message to result or exception.
 %%
-%% @spec parse_response(binary() | string(), Opts) ->
-%%     {ok, result,    Result  :: any()}
-%%   | {ok, exception, Message :: any()}
+%% @spec parse_response(binary() | string(), optlist()) ->
+%%     {ok, result,    Result  :: xmlrpc_result()}
+%%   | {ok, exception, Message :: xmlrpc_exception()}
 %%   | {error, Reason}
+
+-spec parse_response(binary() | string(), optlist()) ->
+    {ok, result,    xmlrpc_result()}
+  | {ok, exception, xmlrpc_exception()}
+  | {error, term()}.
 
 parse_response(XML, Opts) ->
   case parse(XML, Opts) of
@@ -192,8 +229,11 @@ parse_response(XML, Opts) ->
 %%
 %% @TODO base64 support
 %%
-%% @spec encode_value(Value :: proc_arg()) ->
+%% @spec encode_value(Value :: jsx_value()) ->
 %%   #xmlElement{}
+
+-spec encode_value(jsx_value()) ->
+  #xmlElement{}.
 
 encode_value([{_,_} | _Rest] = Value) ->
   Members = [
@@ -233,6 +273,9 @@ encode_value(Value) when is_atom(Value) ->
 %% @spec e(atom(), [xml_node()] | xml_node()) ->
 %%   #xmlElement{}
 
+-spec e(atom(), [xml_node()] | xml_node()) ->
+  #xmlElement{}.
+
 e(Tag, Content) when is_list(Content) ->
   #xmlElement{ name = Tag, content = Content};
 e(Tag, Content) ->
@@ -241,8 +284,11 @@ e(Tag, Content) ->
 %% @doc Create text content node for XML element (for {@link e/2}, for
 %%   example).
 %%
-%% @spec text(iolist()) ->
+%% @spec text(iolist() | binary()) ->
 %%   #xmlText{}
+
+-spec text(iolist() | binary()) ->
+  #xmlText{}.
 
 text(Text) ->
   #xmlText{value = [Text]}.
@@ -251,6 +297,9 @@ text(Text) ->
 %%
 %% @spec name_to_string(atom() | binary() | string()) ->
 %%   binary() | string()
+
+-spec name_to_string(atom() | binary() | string()) ->
+  binary() | string().
 
 name_to_string(Name) when is_atom(Name) ->
   atom_to_list(Name);
@@ -275,6 +324,12 @@ name_to_string(Name) when is_binary(Name) orelse is_list(Name) ->
 %%   | {ok, result,    xmlrpc_result()}
 %%   | {ok, exception, xmlrpc_exception()}
 %%   | {error, Reason}
+
+-spec decode_document(#xmlElement{}) ->
+    {ok, request,   xmlrpc_request()}
+  | {ok, result,    xmlrpc_result()}
+  | {ok, exception, xmlrpc_exception()}
+  | {error, term()}.
 
 decode_document(#xmlElement{ name = methodCall, content = Children }) ->
   % for method call, two children to expect: `<methodName/>' and `<params/>',
@@ -342,8 +397,10 @@ decode_document(#xmlElement{name = methodResponse, content = TopChildren}) ->
 %%   Expect content of `<params/>' tag (i.e. single `<param/>').
 %%
 %% @spec decode_results(XMLElement :: #xmlElement{}) ->
-%%     {ok, result,    xmlrpc_result()}
-%%   | {error, Reason}
+%%   jsx_value() | {error, Reason}
+
+-spec decode_results([#xmlElement{}]) ->
+  jsx_value() | {error, term()}.
 
 decode_results([#xmlElement{name = param, content = Children}] = _Elements) ->
   case [E || #xmlElement{name = value} = E <- Children] of
@@ -366,9 +423,11 @@ decode_results(_Any) ->
 %%   Expect content of `<fault/>' tag (i.e. single `<struct/>' with two
 %%   members: `faultString' and `faultCode', in any order).
 %%
-%% @spec decode_faults(XMLElement :: #xmlElement{}) ->
-%%     {ok, exception, xmlrpc_exception()}
-%%   | {error, Reason}
+%% @spec decode_faults([#xmlElement{}]) ->
+%%   {Code :: integer(), Message :: binary()} | {error, Reason}
+
+-spec decode_faults([#xmlElement{}]) ->
+  {integer(), binary()} | {error, term()}.
 
 decode_faults([#xmlElement{name = value, content = Children}] = _Elements) ->
   case [E || #xmlElement{} = E <- Children] of
@@ -394,7 +453,10 @@ decode_faults(_Any) ->
 %%   make error messages more readable.
 %%
 %% @spec decode_value(XMLElement :: #xmlElement{}) ->
-%%   proc_arg() | {error, Reason}
+%%   jsx_value() | {error, Reason}
+
+-spec decode_value(#xmlElement{}) ->
+  jsx_value().
 
 decode_value(V) ->
   try
@@ -409,7 +471,10 @@ decode_value(V) ->
 %% @doc Decode single value (scalar, array or struct) recursively.
 %%
 %% @spec decode_value_rec(XMLElement :: #xmlElement{}) ->
-%%   proc_arg()
+%%   jsx_value()
+
+-spec decode_value_rec(#xmlElement{}) ->
+  jsx_value().
 
 decode_value_rec(#xmlElement{name = i4} = E) ->
   decode_int(E);
@@ -437,6 +502,9 @@ decode_value_rec(#xmlElement{name = array} = E) ->
 %% @spec decode_int(XMLElement :: #xmlElement{}) ->
 %%   integer()
 
+-spec decode_int(#xmlElement{}) ->
+  integer().
+
 decode_int(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
   list_to_integer(Value).
 
@@ -444,6 +512,9 @@ decode_int(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
 %%
 %% @spec decode_boolean(XMLElement :: #xmlElement{}) ->
 %%   boolean()
+
+-spec decode_boolean(#xmlElement{}) ->
+  boolean().
 
 decode_boolean(#xmlElement{content = [#xmlText{value = "0"}]} = _V) ->
   false;
@@ -455,6 +526,9 @@ decode_boolean(#xmlElement{content = [#xmlText{value = "1"}]} = _V) ->
 %% @spec decode_string(XMLElement :: #xmlElement{}) ->
 %%   binary()
 
+-spec decode_string(#xmlElement{}) ->
+  binary().
+
 decode_string(#xmlElement{content = []} = _V) ->
   <<>>;
 decode_string(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
@@ -464,6 +538,9 @@ decode_string(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
 %%
 %% @spec decode_double(XMLElement :: #xmlElement{}) ->
 %%   float()
+
+-spec decode_double(#xmlElement{}) ->
+  float().
 
 decode_double(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
   list_to_float(Value).
@@ -475,6 +552,9 @@ decode_double(#xmlElement{content = [#xmlText{value = Value}]} = _V) ->
 %%
 %% @spec decode_nil(XMLElement :: #xmlElement{}) ->
 %%   null
+
+-spec decode_nil(#xmlElement{}) ->
+  null.
 
 decode_nil(_V) ->
   null.
@@ -490,9 +570,12 @@ decode_nil(_V) ->
 %%   Function recursively decodes struct content.
 %%
 %% @spec decode_struct(XMLElement :: #xmlElement{}) ->
-%%   [{}] | [{Key :: binary(), Value :: proc_arg()}]
+%%   jsx_hash()
 %%
 %% @end
+
+-spec decode_struct(#xmlElement{}) ->
+  jsx_hash().
 
 %% ```
 %%   <struct>
@@ -518,7 +601,10 @@ decode_struct(#xmlElement{content = MembersText} = _V) ->
 %%   well-formed.
 %%
 %% @spec extract_struct_member(XMLElement :: #xmlElement{}) ->
-%%   {Key :: binary(), Value :: proc_arg()}
+%%   {jsx_hash_key(), jsx_value()}
+
+-spec extract_struct_member(#xmlElement{}) ->
+  {jsx_hash_key(), jsx_value()}.
 
 extract_struct_member(#xmlElement{content = NameValueText} = _Member) ->
   NameValue = [E || #xmlElement{} = E <- NameValueText],
@@ -535,9 +621,12 @@ extract_struct_member(#xmlElement{content = NameValueText} = _Member) ->
 %%   Function recursively decodes array content.
 %%
 %% @spec decode_array(XMLElement :: #xmlElement{}) ->
-%%   [proc_arg()]
+%%   [jsx_value()]
 %%
 %% @end
+
+-spec decode_array(#xmlElement{}) ->
+  [jsx_value()].
 
 %% ```
 %%   <array>
@@ -564,6 +653,9 @@ decode_array(#xmlElement{content = ArrayData} = _V) ->
 %%
 %% @spec extract_child([xml_node()]) ->
 %%   #xmlElement{}
+
+-spec extract_child([xml_node()]) ->
+  #xmlElement{}.
 
 extract_child(Children) ->
   case [E || #xmlElement{} = E <- Children] of

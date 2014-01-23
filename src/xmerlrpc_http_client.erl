@@ -22,6 +22,12 @@
 
 %% @type url() = xmerlrpc_url:url() | xmerlrpc_url:url_spec().
 
+-type url() :: xmerlrpc_url:url() | xmerlrpc_url:url_spec().
+
+%% @type http_request_body() = none | iolist().
+
+-type http_request_body() :: none | iolist().
+
 %% @type http_response() = {Headers :: [http_header()], Body :: binary()}.
 
 -type http_response() :: {[http_header()], binary()}.
@@ -32,7 +38,11 @@
 
 %% @type socket().
 
--opaque socket() :: {Type :: atom(), ssl:sslsocket() | gen_tcp:socket()}.
+-type socket() :: {Type :: atom(), Socket :: term()}.
+
+%% @type optlist() = [{atom(), term()} | atom()].
+
+-type optlist() :: [{atom(), term()} | atom()].
 
 %%% }}}
 %%%---------------------------------------------------------------------------
@@ -40,71 +50,95 @@
 
 %% @doc Connect to HTTP server, send a request and retrieve response.
 %%
-%% @spec request(get | post, URL :: url(), [http_header()], iolist(), Opts) ->
+%% @spec request(get | post, url(), [http_header()],
+%%               http_request_body(), optlist()) ->
 %%   {ok, http_response()} | {error, Reason}
+
+-spec request(get | post, url(), [http_header()], http_request_body(),
+              optlist()) ->
+  {ok, http_response()} | {error, term()}.
 
 request(Method, URL, Headers, Body, Opts) when is_list(URL) ->
   request(Method, xmerlrpc_url:parse(URL), Headers, Body, Opts);
 
 request(Method, {Proto, _Creds, Host, Port, Path}, Headers, Body, _Opts) ->
-  % TODO: return error if encountered instead of dying
+  try
+    Sock = case Proto of
+      http  -> open_http(Host, Port);
+      https -> open_https(Host, Port)
+    end,
 
-  {ok, Sock} = case Proto of
-    http  -> open_http(Host, Port);
-    https -> open_https(Host, Port)
-  end,
+    % TODO: Connection: keep-alive + retries
+    % TODO: credentials
+    send_http_method(Sock, Method, Path),
+    send_http_headers(Sock, [{"Host", Host}, {"Connection", "close"} | Headers]),
+    send_http_body(Sock, Body),
 
-  % TODO: Connection: keep-alive + retries
-  % TODO: credentials
-  send_http_method(Sock, Method, Path),
-  send_http_headers(Sock, [{"Host", Host}, {"Connection", "close"} | Headers]),
-  send_http_body(Sock, Body),
+    {Code, StatusLine, ReplyHeaders, ReplyBodyList} = read_http_response(Sock),
 
-  {Code, StatusLine, ReplyHeaders, ReplyBodyList} = read_http_response(Sock),
+    close_http(Sock),
 
-  ok = close_http(Sock),
-  ReplyBody = iolist_to_binary(ReplyBodyList),
-
-  case Code div 100 of
-    2 -> {ok, {ReplyHeaders, ReplyBody}};
-    3 -> {error, redirection_not_supported};
-    4 -> {error, {client_error, Code, StatusLine, ReplyHeaders}};
-    5 -> {error, {server_error, Code, StatusLine, ReplyHeaders}}
+    case Code div 100 of
+      2 -> {ok, {ReplyHeaders, iolist_to_binary(ReplyBodyList)}};
+      3 -> {error, redirection_not_supported};
+      4 -> {error, {client_error, Code, StatusLine, ReplyHeaders}};
+      5 -> {error, {server_error, Code, StatusLine, ReplyHeaders}}
+    end
+  catch
+    throw:Error ->
+      Error
   end.
 
 %%----------------------------------------------------------
-%% open/close connection {{{
+%% open/close/send/recv {{{
 
 %% @doc Open HTTP (unencrypted) connection to specified host.
 %%   Port defaults to 80.
 %%
-%% @spec open_http(string(), integer() | default) ->
-%%   {ok, socket()} | {error, Reason}
+%% @spec open_http(string(), xmerlrpc_url:portnum()) ->
+%%   socket()
+
+-spec open_http(string(), xmerlrpc_url:portnum()) ->
+  socket().
 
 open_http(Host, default) ->
   open_http(Host, 80);
 open_http(Host, Port) ->
   TCPOpts = [{packet, line}, {active, false}, binary],
-  {ok, Sock} = gen_tcp:connect(Host, Port, TCPOpts),
-  {ok, {gen_tcp, Sock}}.
+  case gen_tcp:connect(Host, Port, TCPOpts) of
+    {ok, Sock} ->
+      {gen_tcp, Sock};
+    {error, _Reason} = Error ->
+      throw(Error)
+  end.
 
 %% @doc Open HTTPs (SSL/TLS) connection to specified host.
 %%   Port defaults to 443.
 %%
-%% @spec open_https(string(), integer() | default) ->
-%%   {ok, socket()} | {error, Reason}
+%% @spec open_https(string(), xmerlrpc_url:portnum()) ->
+%%   socket()
+
+-spec open_https(string(), xmerlrpc_url:portnum()) ->
+  socket().
 
 open_https(Host, default) ->
   open_https(Host, 443);
 open_https(Host, Port) ->
   SSLOpts = [{packet, line}, {active, false}, binary],
-  {ok, Sock} = ssl:connect(Host, Port, SSLOpts),
-  {ok, {ssl, Sock}}.
+  case ssl:connect(Host, Port, SSLOpts) of
+    {ok, Sock} ->
+      {ssl, Sock};
+    {error, _Reason} = Error ->
+      throw(Error)
+  end.
 
 %% @doc Close HTTP (unencrypted) connection.
 %%
 %% @spec close_http(socket()) ->
 %%   ok
+
+-spec close_http(socket()) ->
+  ok.
 
 close_http({Mod, S} = _Sock) ->
   Mod:close(S).
@@ -112,23 +146,39 @@ close_http({Mod, S} = _Sock) ->
 %% @doc Send chunk of data through socket.
 %%
 %% @spec send(socket(), iolist()) ->
-%%   ok | {error, Reason}
+%%   ok
+
+-spec send(socket(), iolist()) ->
+  ok.
 
 send({Mod, S} = _Sock, Data) ->
-  Mod:send(S, Data).
+  case Mod:send(S, Data) of
+    ok ->
+      ok;
+    {error, _Reason} = Error ->
+      throw(Error)
+  end.
 
 %% @doc Read HTTP status line from socket.
 %%
 %% @spec recv_code(socket()) ->
-%%   {ok, {Code :: integer(), Status :: binary()}} | {error, Reason}
+%%   {Code :: integer(), Status :: binary()}
+
+-spec recv_code(socket()) ->
+  {integer(), binary()}.
 
 recv_code({Mod, S} = _Sock) ->
-  {ok, Line} = Mod:recv(S, 0),
-  case erlang:decode_packet(http_bin, Line, []) of
+  Line = case Mod:recv(S, 0) of
+    {ok, L} ->
+      L;
+    {error, _RecvReason} = RecvError ->
+      throw(RecvError)
+  end,
+  case erlang:decode_packet(http, Line, []) of
     {ok, {http_response, _HTTPVer, Code, Status}, <<>>} ->
-      {ok, {Code, Status}};
-    {error, _Reason} = Error ->
-      Error
+      {Code, ensure_binary(Status)};
+    {error, _DecodeReason} = DecodeError ->
+      throw(DecodeError)
   end.
 
 %% @doc Read HTTP header from socket.
@@ -136,32 +186,61 @@ recv_code({Mod, S} = _Sock) ->
 %%   For headers returned as atoms, see erlang:decode_packet/3
 %%
 %% @spec recv_header(socket()) ->
-%%     {ok, {Name :: binary() | atom(), Value :: binary()}}
-%%   | {ok, http_eoh}
-%%   | {error, Reason}
+%%     {Name :: binary(), Value :: binary()} | http_eoh
+
+-spec recv_header(socket()) ->
+  {binary(), binary()} | http_eoh.
 
 recv_header({Mod, S} = _Sock) ->
-  {ok, Line} = Mod:recv(S, 0),
+  Line = case Mod:recv(S, 0) of
+    {ok, L} ->
+      L;
+    {error, _RecvReason} = RecvError ->
+      throw(RecvError)
+  end,
   % XXX: period after `Line' is artificial thing required at least under R14A
   % for decode_packet() not to return `{more,Length}'
-  case erlang:decode_packet(httph_bin, <<Line/binary, ".">>, []) of
+  case erlang:decode_packet(httph, <<Line/binary, ".">>, []) of
     {ok, {http_header, _HNum, HName, _Reserved, HValue}, <<".">>} ->
-      {ok, {HName, HValue}};
+      {ensure_binary(HName), ensure_binary(HValue)};
     {ok, http_eoh, <<".">>} ->
-      {ok, http_eoh};
+      http_eoh;
     {more, _Length} ->
-      {error, packet_too_short};
+      throw({error, packet_too_short});
     {error, _Reason} = Error ->
-      Error
+      throw(Error)
   end.
 
 %% @doc Read single (payload) line from socket.
 %%
 %% @spec recv_line(socket()) ->
-%%   {ok, binary()} | {error, Reason}
+%%   binary()
+
+-spec recv_line(socket()) ->
+  binary() | eof.
 
 recv_line({Mod, S} = _Sock) ->
-  Mod:recv(S, 0).
+  case Mod:recv(S, 0) of
+    {ok, L} ->
+      L;
+    {error, closed} ->
+      eof;
+    {error, _RecvReason} = RecvError ->
+      throw(RecvError)
+  end.
+
+%% @doc Convert atom or string to a binary.
+%%
+%% @spec ensure_binary(atom() | string()) ->
+%%   binary()
+
+-spec ensure_binary(atom() | string()) ->
+  binary().
+
+ensure_binary(Name) when is_atom(Name) ->
+  atom_to_binary(Name, utf8);
+ensure_binary(Name) when is_list(Name) ->
+  list_to_binary(Name).
 
 %% }}}
 %%----------------------------------------------------------
@@ -172,10 +251,13 @@ recv_line({Mod, S} = _Sock) ->
 %% @spec send_http_method(socket(), get | post, string()) ->
 %%   ok
 
+-spec send_http_method(socket(), get | post, string()) ->
+  ok.
+
 send_http_method(Sock, get, Path) ->
-  ok = send(Sock, ["GET ", Path, " HTTP/1.1\r\n"]);
+  send(Sock, ["GET ", Path, " HTTP/1.1\r\n"]);
 send_http_method(Sock, post, Path) ->
-  ok = send(Sock, ["POST ", Path, " HTTP/1.1\r\n"]).
+  send(Sock, ["POST ", Path, " HTTP/1.1\r\n"]).
 
 %% @doc Send headers of HTTP request.
 %%   Function doesn't send <i>end of headers</i> marker, so it's still
@@ -184,10 +266,13 @@ send_http_method(Sock, post, Path) ->
 %% @spec send_http_headers(socket(), [http_header()]) ->
 %%   ok
 
+-spec send_http_headers(socket(), [http_header()]) ->
+  ok.
+
 send_http_headers(_Sock, [] = _Headers) ->
   ok;
 send_http_headers(Sock, [{Name, Value} | Rest] = _Headers) ->
-  ok = send(Sock, [Name, ": ", Value, "\r\n"]),
+  send(Sock, [Name, ": ", Value, "\r\n"]),
   send_http_headers(Sock, Rest).
 
 %% @doc Send body of HTTP request.
@@ -196,18 +281,21 @@ send_http_headers(Sock, [{Name, Value} | Rest] = _Headers) ->
 %%
 %%   When `Body = none', no <i>Content-Length</i> is sent, of course.
 %%
-%% @spec send_http_body(socket(), iolist() | none) ->
+%% @spec send_http_body(socket(), http_request_body()) ->
 %%   ok
 
+-spec send_http_body(socket(), http_request_body()) ->
+  ok.
+
 send_http_body(Sock, none = _Body) ->
-  ok = send(Sock, "\r\n");
+  send(Sock, "\r\n");
 send_http_body(Sock, <<>> = _Body) ->
-  ok = send(Sock, "\r\n");
+  send(Sock, "\r\n");
 send_http_body(Sock, Body) ->
   Length = integer_to_list(iolist_size(Body)),
-  ok = send(Sock, ["Content-Length: ", Length, "\r\n"]),
-  ok = send(Sock, "\r\n"),
-  ok = send(Sock, Body).
+  send(Sock, ["Content-Length: ", Length, "\r\n"]),
+  send(Sock, "\r\n"),
+  send(Sock, Body).
 
 %% }}}
 %%----------------------------------------------------------
@@ -224,8 +312,11 @@ send_http_body(Sock, Body) ->
 %%   {Code :: integer(), Status :: binary(),
 %%     Headers :: [http_header()], Body :: iolist()}
 
+-spec read_http_response(socket()) ->
+  {integer(), binary(), [http_header()], iolist()}.
+
 read_http_response(Sock) ->
-  {ok, {Code, Status}} = recv_code(Sock),
+  {Code, Status} = recv_code(Sock),
   Headers = read_http_headers(Sock),
   Body = case proplists:get_value(<<"Content-Length">>, Headers) of
     undefined ->
@@ -252,16 +343,15 @@ read_http_response(Sock) ->
 %% @spec read_http_headers(socket()) ->
 %%   [http_header()]
 
+-spec read_http_headers(socket()) ->
+  [http_header()].
+
 read_http_headers(Sock) ->
   case recv_header(Sock) of
-    {ok, {Name, Value}} when is_atom(Name) ->
-      % NOTE: `Name' has normalized case
-      BinName = atom_to_binary(Name, utf8),
-      [{BinName, Value} | read_http_headers(Sock)];
-    {ok, {Name, Value}} ->
+    {Name, Value} ->
       % NOTE: `Name' has normalized case
       [{Name, Value} | read_http_headers(Sock)];
-    {ok, http_eoh} ->
+    http_eoh ->
       []
   end.
 
@@ -276,12 +366,20 @@ read_http_headers(Sock) ->
 %% @spec read_http_body_size(socket(), Size :: integer()) ->
 %%   iolist()
 
+-spec read_http_body_size(socket(), integer()) ->
+  iolist().
+
 read_http_body_size(_Sock, 0) ->
   [];
 read_http_body_size(Sock, Size) when Size > 0 ->
-  % NOTE: if `{error,closed}' was encountered, throw an error (not all was
-  % read, as there's still `Size > 0')
-  {ok, Line} = recv_line(Sock),
+  % NOTE: if EOF was encountered, throw an error (not all was read, as there's
+  % still `Size > 0')
+  Line = case recv_line(Sock) of
+    L when is_binary(L) ->
+      L;
+    eof ->
+      throw({error,eof})
+  end,
   [Line | read_http_body_size(Sock, Size - byte_size(Line))].
 
 %% @doc Read body of HTTP response.
@@ -291,8 +389,16 @@ read_http_body_size(Sock, Size) when Size > 0 ->
 %% @spec read_http_body_chunked(socket()) ->
 %%   iolist()
 
+-spec read_http_body_chunked(socket()) ->
+  iolist().
+
 read_http_body_chunked(Sock) ->
-  {ok, Line} = recv_line(Sock),
+  Line = case recv_line(Sock) of
+    L when is_binary(L) ->
+      L;
+    eof ->
+      throw({error,eof})
+  end,
   LineLen = byte_size(Line) - 2,
   <<ChunkSizeBin:LineLen/binary, "\r\n">> = Line, % make sure CRLF ending
   case ChunkSizeBin of
@@ -307,7 +413,11 @@ read_http_body_chunked(Sock) ->
       ChunkSize = erlang:list_to_integer(binary_to_list(ChunkSizeBin), 16),
       Chunk = read_http_body_size(Sock, ChunkSize),
       % chunk ends with CRLF
-      {ok, <<"\r\n">>} = recv_line(Sock),
+      case recv_line(Sock) of
+        <<"\r\n">> -> ok;
+        eof  -> throw({error,eof});
+        _Any -> throw({error,protocol_error})
+      end,
       [Chunk | read_http_body_chunked(Sock)]
   end.
 
@@ -320,11 +430,14 @@ read_http_body_chunked(Sock) ->
 %% @spec read_http_body_till_eof(socket()) ->
 %%   iolist()
 
+-spec read_http_body_till_eof(socket()) ->
+  iolist().
+
 read_http_body_till_eof(Sock) ->
   case recv_line(Sock) of
-    {ok, Line} ->
+    Line when is_binary(Line) ->
       [Line | read_http_body_till_eof(Sock)];
-    {error, closed} ->
+    eof ->
       []
   end.
 
@@ -340,6 +453,9 @@ read_http_body_till_eof(Sock) ->
 %% @spec get(url(), Opts) ->
 %%   {ok, http_response()} | {error, Reason}
 
+-spec get(url(), optlist()) ->
+  {ok, http_response()} | {error, term()}.
+
 get(URL, Opts) ->
   get(URL, [], none, Opts).
 
@@ -348,13 +464,19 @@ get(URL, Opts) ->
 %% @spec get(url(), [http_header()], Opts) ->
 %%   {ok, http_response()} | {error, Reason}
 
+-spec get(url(), [http_header()], optlist()) ->
+  {ok, http_response()} | {error, term()}.
+
 get(URL, Headers, Opts) ->
   get(URL, Headers, none, Opts).
 
 %% @doc Send GET request and retrieve response.
 %%
-%% @spec get(url(), [http_header()], iolist(), Opts) ->
+%% @spec get(url(), [http_header()], http_request_body(), optlist()) ->
 %%   {ok, http_response()} | {error, Reason}
+
+-spec get(url(), [http_header()], http_request_body(), optlist()) ->
+  {ok, http_response()} | {error, term()}.
 
 get(URL, Headers, Body, Opts) ->
   request(get, URL, Headers, Body, Opts).
@@ -365,24 +487,33 @@ get(URL, Headers, Body, Opts) ->
 
 %% @doc Send POST request and retrieve response.
 %%
-%% @spec post(url(), Options) ->
+%% @spec post(url(), optlist()) ->
 %%   {ok, http_response()} | {error, Reason}
+
+-spec post(url(), optlist()) ->
+  {ok, http_response()} | {error, term()}.
 
 post(URL, Opts) ->
   post(URL, [], none, Opts).
 
 %% @doc Send POST request and retrieve response.
 %%
-%% @spec post(url(), [http_header()], Options) ->
+%% @spec post(url(), [http_header()], optlist()) ->
 %%   {ok, http_response()} | {error, Reason}
+
+-spec post(url(), [http_header()], optlist()) ->
+  {ok, http_response()} | {error, term()}.
 
 post(URL, Headers, Opts) ->
   post(URL, Headers, none, Opts).
 
 %% @doc Send POST request and retrieve response.
 %%
-%% @spec post(url(), [http_header()], iolist(), Options) ->
+%% @spec post(url(), [http_header()], http_request_body(), optlist()) ->
 %%   {ok, http_response()} | {error, Reason}
+
+-spec post(url(), [http_header()], http_request_body(), optlist()) ->
+  {ok, http_response()} | {error, term()}.
 
 post(URL, Headers, Body, Opts) ->
   request(post, URL, Headers, Body, Opts).

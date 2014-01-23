@@ -23,29 +23,33 @@
 %% @type url() = string().
 %%
 %% Raw, unparsed URL.
+
 -type url() :: string().
 
 %% @type url_spec() =
-%%   {protocol(), credentials(), hostname(), portnum() | default,
-%%     Path :: string()}.
+%%   {protocol(), credentials(), hostname(), portnum(), Path :: string()}.
 %%
 %% URL broken into parts.
 %%
 %% URL arguments (`?foo=...') are part of `Path'.
+
 -type url_spec() ::
-  {protocol(), credentials(), hostname(), portnum() | default,
-    Path :: string()}.
+  {protocol(), credentials(), hostname(), portnum(), Path :: string()}.
 
 %% @type protocol() = http | https.
+
 -type protocol() :: http | https.
 
 %% @type hostname() = string().
+
 -type hostname() :: string().
 
-%% @type portnum() = non_neg_integer().
--type portnum() :: non_neg_integer().
+%% @type portnum() = non_neg_integer() | default.
+
+-type portnum() :: non_neg_integer() | default.
 
 %% @type credentials() = none | {Username :: string(), Password :: string()}.
+
 -type credentials() :: none | {Username :: string(), Password :: string()}.
 
 %%% }}}
@@ -60,6 +64,9 @@
 %%
 %% @spec parse(url()) ->
 %%   url_spec() | {error, Reason}
+
+-spec parse(url()) ->
+  url_spec() | {error, Reason :: term()}.
 
 parse(URL) ->
   try
@@ -76,6 +83,9 @@ parse(URL) ->
 %%
 %% @spec parse_real(url()) ->
 %%   url_spec()
+
+-spec parse_real(url()) ->
+  url_spec().
 
 parse_real(URL) ->
   URLLowCase = string:to_lower(URL),
@@ -134,9 +144,11 @@ parse_real(URL) ->
 
 %% @doc Reconstruct HTTP URL from fragments.
 %%
-%% @spec form(protocol(), credentials(), hostname(), portnum() | default,
-%%            string()) ->
+%% @spec form(protocol(), credentials(), hostname(), portnum(), string()) ->
 %%   url()
+
+-spec form(protocol(), credentials(), hostname(), portnum(), string()) ->
+  url().
 
 form(Protocol, Creds, Host, Port, Path) ->
   case Protocol of
@@ -170,6 +182,9 @@ form(Protocol, Creds, Host, Port, Path) ->
 %% @spec percent_encode(string() | binary()) ->
 %%   string()
 
+-spec percent_encode(string() | binary()) ->
+  string().
+
 percent_encode(String) when is_binary(String) ->
   percent_encode(binary_to_list(String));
 percent_encode(":" ++ Rest) -> "%3a" ++ percent_encode(Rest);
@@ -196,8 +211,11 @@ percent_encode("") -> "".
 %% @equiv form(Protocol, none, Host, Port, Path)
 %% @see   form/5
 %%
-%% @spec form(protocol(), hostname(), portnum() | default, string()) ->
+%% @spec form(protocol(), hostname(), portnum(), string()) ->
 %%   url()
+
+-spec form(protocol(), hostname(), portnum(), string()) ->
+  url().
 
 form(Protocol, Host, Port, Path) ->
   form(Protocol, none, Host, Port, Path).
@@ -205,8 +223,11 @@ form(Protocol, Host, Port, Path) ->
 %% @equiv form(Protocol, none, Host, Port, Path)
 %% @see   form/5
 %%
-%% @spec form(hostname(), portnum() | default) ->
+%% @spec form(hostname(), portnum()) ->
 %%   url()
+
+-spec form(hostname(), portnum()) ->
+  url().
 
 form(Host, Port) ->
   form(http, Host, Port, "/").
@@ -218,6 +239,9 @@ form(Host, Port) ->
 %% @spec form(url_spec()) ->
 %%   url()
 
+-spec form(url_spec()) ->
+  url().
+
 form({Protocol, Creds, Host, Port, Path} = _URLSpec) ->
   form(Protocol, Creds, Host, Port, Path).
 
@@ -228,9 +252,12 @@ form({Protocol, Creds, Host, Port, Path} = _URLSpec) ->
 %% @doc Fill `url_spec()' tuple with defaults.
 %%   The tuple is compatible with the one returned by {@link parse/1}.
 %%
-%% @spec url_spec(protocol(), credentials(), hostname(), portnum() | default,
+%% @spec url_spec(protocol(), credentials(), hostname(), portnum(),
 %%                string()) ->
 %%   url_spec()
+
+-spec url_spec(protocol(), credentials(), hostname(), portnum(), string()) ->
+  url_spec().
 
 url_spec(Protocol, Creds, Host, Port, Path) ->
   case Creds of
@@ -248,8 +275,11 @@ url_spec(Protocol, Creds, Host, Port, Path) ->
 %% @equiv url_spec(Protocol, none, Host, Port, Path)
 %% @see   url_spec/5
 %%
-%% @spec url_spec(protocol(), hostname(), portnum() | default, string()) ->
+%% @spec url_spec(protocol(), hostname(), portnum(), string()) ->
 %%   url_spec()
+
+-spec url_spec(protocol(), hostname(), portnum(), string()) ->
+  url_spec().
 
 url_spec(Protocol, Host, Port, Path) ->
   url_spec(Protocol, none, Host, Port, Path).
@@ -257,8 +287,11 @@ url_spec(Protocol, Host, Port, Path) ->
 %% @equiv url_spec(http, Host, Port, "/")
 %% @see   url_spec/5
 %%
-%% @spec url_spec(hostname(), portnum() | default) ->
+%% @spec url_spec(hostname(), portnum()) ->
 %%   url_spec()
+
+-spec url_spec(hostname(), portnum()) ->
+  url_spec().
 
 url_spec(Host, Port) ->
   url_spec(http, Host, Port, "/").
@@ -268,6 +301,9 @@ url_spec(Host, Port) ->
 %%
 %% @spec url_spec(hostname()) ->
 %%   url_spec()
+
+-spec url_spec(hostname()) ->
+  url_spec().
 
 url_spec(Host) ->
   url_spec(Host, default).

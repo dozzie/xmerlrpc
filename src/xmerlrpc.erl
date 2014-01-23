@@ -16,10 +16,12 @@
 %% TODO: request dispatching and routing
 %-export([dispatch/0, route/0, apply/0]).
 
-%-export_type([foo/0]).
-
 %%%---------------------------------------------------------------------------
 %%% types {{{
+
+%% @type optlist() = [{atom(), term()} | atom()].
+
+-type optlist() :: [{atom(), term()} | atom()].
 
 %%% }}}
 %%%---------------------------------------------------------------------------
@@ -27,8 +29,11 @@
 
 %% @doc Call remote procedure.
 %%
-%% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], Opts) ->
+%% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
 %%   term()
+
+-spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
+  xmerlrpc_xml:proc_arg().
 
 call(Proc, Args, Opts) ->
   URLSpec = case proplists:get_value(url, Opts) of
@@ -65,8 +70,11 @@ call(Proc, Args, Opts) ->
 %%
 %%   Function to be used when no `{url,URL}' tuple was present in options.
 %%
-%% @spec get_host_port_proto(Opts) ->
+%% @spec get_host_port_proto(optlist()) ->
 %%   xmerlrpc_url:url_spec()
+
+-spec get_host_port_proto(optlist()) ->
+  xmerlrpc_url:url_spec().
 
 get_host_port_proto(Opts) ->
   Host = case proplists:get_value(host, Opts) of
@@ -92,8 +100,12 @@ get_host_port_proto(Opts) ->
 %% @doc Create XML-RPC request (function call) document.
 %% @see xmerlrpc_xml:request/3
 %%
-%% @spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], Opts) ->
+%% @spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
+%%               optlist()) ->
 %%   iolist()
+
+-spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
+  iolist().
 
 request(Proc, Args, Opts) ->
   xmerlrpc_xml:request(Proc, Args, Opts).
@@ -102,8 +114,11 @@ request(Proc, Args, Opts) ->
 %%   function.
 %% @see xmerlrpc_xml:result/2
 %%
-%% @spec result(term(), Opts) ->
+%% @spec result(xmerlrpc_xml:proc_arg(), optlist()) ->
 %%   iolist()
+
+-spec result(xmerlrpc_xml:proc_arg(), optlist()) ->
+  iolist().
 
 result(Result, Opts) ->
   xmerlrpc_xml:result(Result, Opts).
@@ -111,8 +126,11 @@ result(Result, Opts) ->
 %% @doc Create XML-RPC exception document.
 %% @see xmerlrpc_xml:exception/3
 %%
-%% @spec exception(integer(), iolist(), Opts) ->
+%% @spec exception(integer(), iolist(), optlist()) ->
 %%   iolist()
+
+-spec exception(integer(), iolist(), optlist()) ->
+  iolist().
 
 exception(Code, Message, Opts) ->
   xmerlrpc_xml:exception(Code, Message, Opts).
@@ -124,11 +142,17 @@ exception(Code, Message, Opts) ->
 %% @doc Parse XML message to request, result or exception.
 %% @see xmerlrpc_xml:parse/2
 %%
-%% @spec parse(binary() | string(), Opts) ->
-%%     {ok, request,   Request :: any()}
-%%   | {ok, result,    Result  :: any()}
-%%   | {ok, exception, Message :: any()}
+%% @spec parse(binary() | string(), optlist()) ->
+%%     {ok, request,   xmerlrpc_xml:xmlrpc_request()}
+%%   | {ok, result,    xmerlrpc_xml:xmlrpc_result()}
+%%   | {ok, exception, xmerlrpc_xml:xmlrpc_exception()}
 %%   | {error, Reason}
+
+-spec parse(binary() | string(), optlist()) ->
+    {ok, request,   xmerlrpc_xml:xmlrpc_request()}
+  | {ok, result,    xmerlrpc_xml:xmlrpc_result()}
+  | {ok, exception, xmerlrpc_xml:xmlrpc_exception()}
+  | {error, term()}.
 
 parse(XMLDocument, Opts) ->
   xmerlrpc_xml:parse(XMLDocument, Opts).
@@ -136,9 +160,11 @@ parse(XMLDocument, Opts) ->
 %% @doc Parse XML message to request.
 %% @see xmerlrpc_xml:parse_request/2
 %%
-%% @spec parse_request(binary() | string(), Opts) ->
-%%     {ok, request, Request :: any()}
-%%   | {error, Reason}
+%% @spec parse_request(binary() | string(), optlist()) ->
+%%   {ok, request, xmerlrpc_xml:xmlrpc_request()} | {error, Reason}
+
+-spec parse_request(binary() | string(), optlist()) ->
+  {ok, request, xmerlrpc_xml:xmlrpc_request()} | {error, term()}.
 
 parse_request(XMLDocument, Opts) ->
   xmerlrpc_xml:parse_request(XMLDocument, Opts).
@@ -146,10 +172,15 @@ parse_request(XMLDocument, Opts) ->
 %% @doc Parse XML message to result or exception.
 %% @see xmerlrpc_xml:parse_response/2
 %%
-%% @spec parse_response(binary() | string(), Opts) ->
-%%     {ok, result,    Result  :: any()}
-%%   | {ok, exception, Message :: any()}
+%% @spec parse_response(binary() | string(), optlist()) ->
+%%     {ok, result,    Result  :: xmerlrpc_xml:xmlrpc_result()}
+%%   | {ok, exception, Message :: xmerlrpc_xml:xmlrpc_exception()}
 %%   | {error, Reason}
+
+-spec parse_response(binary() | string(), optlist()) ->
+    {ok, result,    xmerlrpc_xml:xmlrpc_result()}
+  | {ok, exception, xmerlrpc_xml:xmlrpc_exception()}
+  | {error, term()}.
 
 parse_response(XMLDocument, Opts) ->
   xmerlrpc_xml:parse_response(XMLDocument, Opts).
