@@ -5,6 +5,11 @@
 
 <b>TODO</b>: some description.
 
+== Architecture ==
+
+Request/response parser, dispatcher, request response builder, built-in HTTP
+client
+
 == Example usage ==
 
 For usage examples see documentation of {@link examples_client} and

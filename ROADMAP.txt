@@ -1,0 +1,19 @@
+== v0.1.0 ==
+
+  * real SSL support (certificates verification and so on)
+  * XML parser and parser: return errors instead of throwing exceptions
+
+== v0.2.0 ==
+
+  * usage examples in documentation
+  * call dispatcher function
+
+== v0.3.0 ==
+
+  * HTTP authentication in the built-in HTTP client
+  * HTTP retries
+
+== v1.0.0 ==
+
+  * tests (at least for XML production and parsing)
+
