@@ -97,56 +97,76 @@
 %% @doc Form XML document containing XML-RPC request (function call).
 %%
 %% @spec request(proc_name(), [proc_arg()], optlist()) ->
-%%   iolist()
+%%   {ok, iolist()} | {error, Reason}
 
 -spec request(proc_name(), [proc_arg()], optlist()) ->
-  iolist().
+  {ok, iolist()} | {error, term()}.
 
 request(ProcName, ProcParams, _Opts) ->
-  XMLCall = e(methodCall, [
-    e(methodName, [text(name_to_string(ProcName))]),
-    e(params, [ e(param, e(value, encode_value(P))) || P <- ProcParams ])
-  ]),
-  xmerl:export([XMLCall], xmerl_xml).
+  try
+    XMLCall = e(methodCall, [
+      e(methodName, [text(name_to_string(ProcName))]),
+      e(params, [ e(param, e(value, encode_value(P))) || P <- ProcParams ])
+    ]),
+    XML = xmerl:export([XMLCall], xmerl_xml),
+    {ok, XML}
+  catch
+    error:function_clause ->
+      {error, badarg}
+  end.
 
 %% @doc Form XML document carrying call result (function reply).
 %%
 %% @spec result(proc_arg(), optlist()) ->
-%%   iolist()
+%%   {ok, iolist()} | {error, Reason}
 
 -spec result(proc_arg(), optlist()) ->
-  iolist().
+  {ok, iolist()} | {error, term()}.
 
 result(Result, _Opts) ->
-  XMLResponse = e(methodResponse, [
-    e(params, [
-      e(param, [
-        e(value, [
-          encode_value(Result)
+  try
+    XMLResponse = e(methodResponse, [
+      e(params, [
+        e(param, [
+          e(value, [
+            encode_value(Result)
+          ])
         ])
       ])
-    ])
-  ]),
-  xmerl:export([XMLResponse], xmerl_xml).
+    ]),
+    XML = xmerl:export([XMLResponse], xmerl_xml),
+    {ok, XML}
+  catch
+    error:function_clause ->
+      {error, badarg}
+  end.
 
 %% @doc Form XML document carrying exception information (function reply).
 %%
 %% @spec exception(integer(), iolist(), optlist()) ->
-%%   iolist()
+%%   {ok, iolist()} | {error, Reason}
 
 -spec exception(integer(), iolist(), optlist()) ->
-  iolist().
+  {ok, iolist()} | {error, term()}.
 
 exception(Code, MessageIOL, _Opts) ->
-  Message = iolist_to_binary(MessageIOL),
-  XMLResponse = e(methodResponse, [
-    e(fault, [
-      e(value, [
-        encode_value([{"faultCode", Code}, {"faultString", Message}])
+  try
+    Message = iolist_to_binary(MessageIOL),
+    XMLResponse = e(methodResponse, [
+      e(fault, [
+        e(value, [
+          encode_value([{"faultCode", Code}, {"faultString", Message}])
+        ])
       ])
-    ])
-  ]),
-  xmerl:export([XMLResponse], xmerl_xml).
+    ]),
+    XML = xmerl:export([XMLResponse], xmerl_xml),
+    {ok, XML}
+  catch
+    error:function_clause ->
+      {error, badarg};
+    error:badarg ->
+      {error, badarg}
+  end.
 
 %%% }}}
 %%%---------------------------------------------------------------------------

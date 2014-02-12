@@ -29,6 +29,9 @@
 
 %% @doc Call remote procedure.
 %%
+%%   On error (either serialization, protocol or on the remote procedure's
+%%   side) function dies ({@link erlang:error/1}).
+%%
 %% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
 %%   term()
 
@@ -43,7 +46,7 @@ call(Proc, Args, Opts) ->
       xmerlrpc_url:parse(URL)
   end,
 
-  RequestBody = request(Proc, Args, Opts),
+  {ok, RequestBody} = request(Proc, Args, Opts),
 
   {ok, {_Headers, ResponseBody}} =
     case proplists:get_value(http_client, Opts, xmerlrpc_http_client) of
@@ -102,10 +105,10 @@ get_host_port_proto(Opts) ->
 %%
 %% @spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
 %%               optlist()) ->
-%%   iolist()
+%%   {ok, iolist()} | {error, Reason}
 
 -spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
-  iolist().
+  {ok, iolist()} | {error, term()}.
 
 request(Proc, Args, Opts) ->
   xmerlrpc_xml:request(Proc, Args, Opts).
@@ -115,10 +118,10 @@ request(Proc, Args, Opts) ->
 %% @see xmerlrpc_xml:result/2
 %%
 %% @spec result(xmerlrpc_xml:proc_arg(), optlist()) ->
-%%   iolist()
+%%   {ok, iolist()} | {error, Reason}
 
 -spec result(xmerlrpc_xml:proc_arg(), optlist()) ->
-  iolist().
+  {ok, iolist()} | {error, term()}.
 
 result(Result, Opts) ->
   xmerlrpc_xml:result(Result, Opts).
@@ -127,10 +130,10 @@ result(Result, Opts) ->
 %% @see xmerlrpc_xml:exception/3
 %%
 %% @spec exception(integer(), iolist(), optlist()) ->
-%%   iolist()
+%%   {ok, iolist()} | {error, Reason}
 
 -spec exception(integer(), iolist(), optlist()) ->
-  iolist().
+  {ok, iolist()} | {error, term()}.
 
 exception(Code, Message, Opts) ->
   xmerlrpc_xml:exception(Code, Message, Opts).
