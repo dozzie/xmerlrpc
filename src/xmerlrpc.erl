@@ -33,23 +33,32 @@
 %%   side) function dies ({@link erlang:error/1}).
 %%
 %% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
-%%   term()
+%%   {ok, xmerlrpc_xml:proc_arg()} | {error, Reason}
 
 -spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
-  xmerlrpc_xml:proc_arg().
+  {ok, xmerlrpc_xml:proc_arg()} | {error, term}.
 
 call(Proc, Args, Opts) ->
-  URLSpec = case proplists:get_value(url, Opts) of
-    undefined ->
-      get_host_port_proto(Opts);
-    URL ->
-      xmerlrpc_url:parse(URL)
-  end,
+  % TODO: split this to several sub-functions
+  try
+    % retrieve URL specification from `Opts'
+    URLSpec = case proplists:get_value(url, Opts) of
+      undefined ->
+        get_host_port_proto(Opts);
+      URL ->
+        xmerlrpc_url:parse(URL)
+    end,
 
-  {ok, RequestBody} = request(Proc, Args, Opts),
+    % build the request
+    RequestBody = case request(Proc, Args, Opts) of
+      {ok, ReqB} ->
+        ReqB;
+      {error, Reason1} ->
+        throw({error, Reason1})
+    end,
 
-  {ok, {_Headers, ResponseBody}} =
-    case proplists:get_value(http_client, Opts, xmerlrpc_http_client) of
+    % do HTTP POST
+    POST = case proplists:get_value(http_client, Opts, xmerlrpc_http_client) of
       HTTPClient when is_atom(HTTPClient) ->
         HTTPClient:post(
           URLSpec, [{<<"Content-Type">>, <<"text/xml">>}], RequestBody, Opts
@@ -59,14 +68,25 @@ call(Proc, Args, Opts) ->
           URLSpec, [{<<"Content-Type">>, <<"text/xml">>}], RequestBody
         )
     end,
+    ResponseBody = case POST of
+      {ok, {_Headers, RespB}} ->
+        RespB;
+      {error, Reason2} ->
+        throw({error, Reason2})
+    end,
 
-  case parse_response(ResponseBody, Opts) of
-    {ok, result, Result} ->
-      Result;
-    {ok, exception, Message} ->
-      erlang:error({remote_exception, Message});
-    {error, _Reason} = Error ->
-      erlang:error(Error)
+    % extract result
+    case parse_response(ResponseBody, Opts) of
+      {ok, result, Result} ->
+        {ok, Result};
+      {ok, exception, Message} ->
+        throw({error, {remote_exception, Message}});
+      {error, Reason3} ->
+        throw({error, Reason3})
+    end
+  catch
+    throw:{error, Reason} ->
+      {error, Reason}
   end.
 
 %% @doc Construct {@link xmerlrpc_url:url_spec/0} out of options proplist.
@@ -81,12 +101,12 @@ call(Proc, Args, Opts) ->
 
 get_host_port_proto(Opts) ->
   Host = case proplists:get_value(host, Opts) of
-    undefined -> erlang:error(no_host);
+    undefined -> throw({error, no_host});
     Hostname  -> Hostname
   end,
   Port = proplists:get_value(port, Opts, default),
   Proto = case proplists:is_defined(ssl_verify, Opts) orelse
-       proplists:is_defined(ssl_ca, Opts) of
+               proplists:is_defined(ssl_ca, Opts) of
     true  -> https;
     false -> http
   end,
