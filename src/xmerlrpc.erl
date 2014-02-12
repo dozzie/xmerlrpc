@@ -29,89 +29,106 @@
 
 %% @doc Call remote procedure.
 %%
-%%   On error (either serialization, protocol or on the remote procedure's
-%%   side) function dies ({@link erlang:error/1}).
-%%
 %% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
 %%   {ok, xmerlrpc_xml:proc_arg()} | {error, Reason}
 
 -spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
-  {ok, xmerlrpc_xml:proc_arg()} | {error, term}.
+  {ok, xmerlrpc_xml:proc_arg()} | {error, term()}.
 
 call(Proc, Args, Opts) ->
-  % TODO: split this to several sub-functions
-  try
-    % retrieve URL specification from `Opts'
-    URLSpec = case proplists:get_value(url, Opts) of
-      undefined ->
-        get_host_port_proto(Opts);
-      URL ->
-        xmerlrpc_url:parse(URL)
-    end,
+  % I know the body of this function is not the elegant one, but at least it's
+  % wrapped once and for all in a library function, so no user needs to make
+  % his code this ugly.
 
-    % build the request
-    RequestBody = case request(Proc, Args, Opts) of
-      {ok, ReqB} ->
-        ReqB;
-      {error, Reason1} ->
-        throw({error, Reason1})
-    end,
-
-    % do HTTP POST
-    POST = case proplists:get_value(http_client, Opts, xmerlrpc_http_client) of
-      HTTPClient when is_atom(HTTPClient) ->
-        HTTPClient:post(
-          URLSpec, [{<<"Content-Type">>, <<"text/xml">>}], RequestBody, Opts
-        );
-      HTTPClient when is_function(HTTPClient) ->
-        HTTPClient(
-          URLSpec, [{<<"Content-Type">>, <<"text/xml">>}], RequestBody
-        )
-    end,
-    ResponseBody = case POST of
-      {ok, {_Headers, RespB}} ->
-        RespB;
-      {error, Reason2} ->
-        throw({error, Reason2})
-    end,
-
-    % extract result
-    case parse_response(ResponseBody, Opts) of
-      {ok, result, Result} ->
-        {ok, Result};
-      {ok, exception, Message} ->
-        throw({error, {remote_exception, Message}});
-      {error, Reason3} ->
-        throw({error, Reason3})
-    end
-  catch
-    throw:{error, Reason} ->
+  % extract URL (somewhat obvious, given the function name)
+  case extract_url_spec(Opts) of
+    {ok, URLSpec} ->
+      % build a request XML
+      case request(Proc, Args, Opts) of
+        {ok, RequestBody} ->
+          % send HTTP POST request
+          case do_post(URLSpec, RequestBody, Opts) of
+            {ok, {_Headers, ResponseBody}} ->
+              % parse response (obvious from function name)
+              case parse_response(ResponseBody, Opts) of
+                {ok, result, Result} ->
+                  {ok, Result};
+                {ok, exception, Message} ->
+                  {error, {remote_exception, Message}};
+                {error, Reason} ->
+                  {error, Reason}
+              end;
+            {error, Reason} ->
+              {error, Reason}
+          end;
+        {error, Reason} ->
+          {error, Reason}
+      end;
+    {error, Reason} ->
       {error, Reason}
   end.
 
-%% @doc Construct {@link xmerlrpc_url:url_spec/0} out of options proplist.
+%% @doc Send HTTP POST and retrieve response.
+%%   Headers returned are list of 2-tuples. Unused by the caller, so no spec
+%%   here.
 %%
-%%   Function to be used when no `{url,URL}' tuple was present in options.
+%% @spec do_post(xmerlrpc_url:url_spec(), iolist(), optlist()) ->
+%%   {ok, {Headers :: list(), Body :: binary()}} | {error, Reason}
+
+-spec do_post(xmerlrpc_url:url_spec(), iolist(), optlist()) ->
+  {ok, {list(), binary()}} | {error, term()}.
+
+do_post(URLSpec, RequestBody, Opts) ->
+  HTTPClient = proplists:get_value(http_client, Opts, xmerlrpc_http_client),
+  do_post(URLSpec, RequestBody, HTTPClient, Opts).
+
+%% @doc Send HTTP POST and retrieve response.
 %%
-%% @spec get_host_port_proto(optlist()) ->
-%%   xmerlrpc_url:url_spec()
+%% @spec do_post(xmerlrpc_url:url_spec(), iolist(), atom() | fun(),
+%%               optlist()) ->
+%%   {ok, {Headers :: list(), Body :: binary()}} | {error, Reason}
 
--spec get_host_port_proto(optlist()) ->
-  xmerlrpc_url:url_spec().
+-spec do_post(xmerlrpc_url:url_spec(), iolist(), atom() | fun(), optlist()) ->
+  {ok, {list(), binary()}} | {error, term()}.
 
-get_host_port_proto(Opts) ->
-  Host = case proplists:get_value(host, Opts) of
-    undefined -> throw({error, no_host});
-    Hostname  -> Hostname
-  end,
-  Port = proplists:get_value(port, Opts, default),
-  Proto = case proplists:is_defined(ssl_verify, Opts) orelse
-               proplists:is_defined(ssl_ca, Opts) of
-    true  -> https;
-    false -> http
-  end,
-  URLSpec = xmerlrpc_url:url_spec(Proto, Host, Port, "/"),
-  URLSpec.
+do_post(URLSpec, RequestBody, HTTPClient, Opts) when is_atom(HTTPClient) ->
+  Headers = [{<<"Content-Type">>, <<"text/xml">>}],
+  HTTPClient:post(URLSpec, Headers, RequestBody, Opts);
+do_post(URLSpec, RequestBody, HTTPClient, _Opts) when is_function(HTTPClient) ->
+  Headers = [{<<"Content-Type">>, <<"text/xml">>}],
+  HTTPClient(URLSpec, Headers, RequestBody).
+
+%% @doc Construct {@link xmerlrpc_url:url_spec/0} based on options proplist.
+%%
+%% @spec extract_url_spec(optlist()) ->
+%%   {ok, xmerlrpc_url:url_spec()} | {error, Reason}
+
+-spec extract_url_spec(optlist()) ->
+  {ok, xmerlrpc_url:url_spec()} | {error, term()}.
+
+extract_url_spec(Opts) ->
+  case proplists:get_value(url, Opts) of
+    undefined ->
+      % build one from host+port options (port defaults to default for
+      % HTTP(s))
+      case proplists:get_value(host, Opts) of
+        undefined ->
+          {error, no_host};
+        Host ->
+          Port = proplists:get_value(port, Opts, default),
+          % HTTP vs. HTTPs is differentiated with presence of SSL options
+          Proto = case proplists:is_defined(ssl_verify, Opts) orelse
+            proplists:is_defined(ssl_ca, Opts) of
+            true  -> https;
+            false -> http
+          end,
+          Spec = xmerlrpc_url:url_spec(Proto, Host, Port, "/"),
+          {ok, Spec}
+      end;
+    URL ->
+      Spec = xmerlrpc_url:parse(URL),
+      {ok, Spec}
+  end.
 
 %%% }}}
 %%%---------------------------------------------------------------------------
