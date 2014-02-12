@@ -1,5 +1,5 @@
 %define _app     xmerlrpc
-%define _version 0.0.1
+%define _version 0.0.2
 %define _release 1
 %define _packager Stanislaw Klekot <dozzie@jarowit.net>
 

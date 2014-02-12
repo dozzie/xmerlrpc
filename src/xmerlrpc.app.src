@@ -1,6 +1,6 @@
 {application, xmerlrpc, [
   {description, "XML-RPC client and server"},
-  {vsn, "0.0.0"},
+  {vsn, "0.0.2"}, % remember about `overview.edoc'
   {registered, []},
   {applications, [kernel, stdlib, xmerl, ssl]},
   %{mod, { xmerlrpc_app, []}}, % callback module
