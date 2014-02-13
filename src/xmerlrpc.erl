@@ -28,12 +28,19 @@
 %%% client {{{
 
 %% @doc Call remote procedure.
+%%   Function returns `{ok,Value}' on success, `{error,Reason}' on protocol
+%%   level failure and `{exception,E}' when remote procedure raised an
+%%   exception.
 %%
 %% @spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
-%%   {ok, xmerlrpc_xml:proc_arg()} | {error, Reason}
+%%     {ok, xmerlrpc_xml:proc_arg()}
+%%   | {exception, xmerlrpc_xml:xmlrpc_exception()}
+%%   | {error, Reason}
 
 -spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
-  {ok, xmerlrpc_xml:proc_arg()} | {error, term()}.
+    {ok, xmerlrpc_xml:proc_arg()}
+  | {exception, xmerlrpc_xml:xmlrpc_exception()}
+  | {error, term()}.
 
 call(Proc, Args, Opts) ->
   % I know the body of this function is not the elegant one, but at least it's
@@ -54,7 +61,7 @@ call(Proc, Args, Opts) ->
                 {ok, result, Result} ->
                   {ok, Result};
                 {ok, exception, Message} ->
-                  {error, {remote_exception, Message}};
+                  {exception, Message};
                 {error, Reason} ->
                   {error, Reason}
               end;
