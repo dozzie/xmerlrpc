@@ -43,36 +43,21 @@
   | {error, term()}.
 
 call(Proc, Args, Opts) ->
-  % I know the body of this function is not the elegant one, but at least it's
-  % wrapped once and for all in a library function, so no user needs to make
-  % his code this ugly.
-
-  % extract URL (somewhat obvious, given the function name)
-  case extract_url_spec(Opts) of
-    {ok, URLSpec} ->
-      % build a request XML
-      case request(Proc, Args, Opts) of
-        {ok, RequestBody} ->
-          % send HTTP POST request
-          case do_post(URLSpec, RequestBody, Opts) of
-            {ok, {_Headers, ResponseBody}} ->
-              % parse response (obvious from function name)
-              case parse_response(ResponseBody, Opts) of
-                {ok, result, Result} ->
-                  {ok, Result};
-                {ok, exception, Message} ->
-                  {exception, Message};
-                {error, Reason} ->
-                  {error, Reason}
-              end;
-            {error, Reason} ->
-              {error, Reason}
-          end;
-        {error, Reason} ->
-          {error, Reason}
-      end;
-    {error, Reason} ->
-      {error, Reason}
+  try
+    % extract URL (somewhat obvious, given the function name)
+    {ok, URLSpec} = extract_url_spec(Opts),
+    % build a request XML
+    {ok, RequestBody} = request(Proc, Args, Opts),
+    % send HTTP POST request
+    {ok, {_Headers, ResponseBody}} = do_post(URLSpec, RequestBody, Opts),
+    % parse response (obvious from function name)
+    {ok, result, Result} = parse_response(ResponseBody, Opts),
+    {ok, Result}
+  catch
+    error:{badmatch,{error,Reason}} ->
+      {error, Reason};
+    error:{badmatch,{ok,exception,Message}} ->
+      {exception, Message}
   end.
 
 %% @doc Send HTTP POST and retrieve response.
