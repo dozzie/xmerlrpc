@@ -3,6 +3,8 @@
 %%%   Simple and dumb HTTP client for xmerlrpc.
 %%%
 %%% @TODO SSL/TLS options (e.g. certificate verification).
+%%% @TODO Error when the server returns content without newlines (and closes
+%%%   the connection)
 %%%
 %%% @end
 %%%---------------------------------------------------------------------------
