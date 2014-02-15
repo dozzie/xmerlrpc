@@ -109,7 +109,7 @@ request(ProcName, ProcParams, _Opts) ->
       e(params, [ e(param, e(value, encode_value(P))) || P <- ProcParams ])
     ]),
     XML = xmerl:export([XMLCall], xmerl_xml),
-    {ok, XML}
+    {ok, [XML, "\n"]}
   catch
     error:function_clause ->
       {error, badarg}
@@ -135,7 +135,7 @@ result(Result, _Opts) ->
       ])
     ]),
     XML = xmerl:export([XMLResponse], xmerl_xml),
-    {ok, XML}
+    {ok, [XML, "\n"]}
   catch
     error:function_clause ->
       {error, badarg}
@@ -160,7 +160,7 @@ exception(Code, MessageIOL, _Opts) ->
       ])
     ]),
     XML = xmerl:export([XMLResponse], xmerl_xml),
-    {ok, XML}
+    {ok, [XML, "\n"]}
   catch
     error:function_clause ->
       {error, badarg};
