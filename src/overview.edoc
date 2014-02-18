@@ -4,12 +4,31 @@
 @title XML-RPC client and server for Erlang.
 @doc
 
-<b>TODO</b>: some description.
+xmerlrpc is a library application providing XML-RPC protocol support for
+client side and server side. It was written mainly because other Erlang
+applications for XML-RPC, mostly extracted from ejabberd, don't allow easy
+writing custom servers and are inconvenient to use on client side.
 
 == Architecture ==
 
-Request/response parser, dispatcher, request response builder, built-in HTTP
-client
+XML-RPC request can be formed by providing two things: remote procedure name
+and arguments to that procedure. This is done by calling
+{@link xmerlrpc:request/3} function. Then, the returned XML document is sent
+using POST request by HTTP client to the server and the response is read
+(there is a small, simple, stateless HTTP client {@link xmerlrpc_http_client},
+which can be used as a default client). After that, response is deserialized
+using {@link xmerlrpc:parse/2} and the result is returned.
+
+On the server side there is a similar chain of operations. First, a request is
+deserialized ({@link xmerlrpc:parse/2}, or rather,
+{@link xmerlrpc:parse_request/2}), processed by call dispatcher and function's
+result is packed back using {@link xmerlrpc:result/2} (or
+{@link xmerlrpc:exception/3} if it was an error).
+
+These low-level protocol details are exposed to the user as a set of
+functions, but for convenience, there are several wrappers, for example
+{@link xmerlrpc:call/3}, so it's not necessary to reimplement them over and
+over again.
 
 == Example usage ==
 

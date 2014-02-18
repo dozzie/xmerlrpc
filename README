@@ -1,0 +1,65 @@
+== xmerlrpc ==
+
+xmerlrpc is a library application providing XML-RPC protocol support for
+client side and server side. It was written mainly because other Erlang
+applications for XML-RPC, mostly extracted from ejabberd, don't allow easy
+writing custom servers and are inconvenient to use on client side.
+
+xmerlrpc exposes low-level protocol functions, so one can use it as a generic
+protocol parser/producer (most important for web applications that want to
+expose their interface with XML-RPC), but also includes convenience wrappers
+and some default implementations (like small, stateless HTTP client), so for
+using it as simple `{ok,Value} = xmerlrpc:call(Proc, Args, Opts)' there are no
+dependencies other than just xmerl (and maybe ssl, if HTTPs is used).
+
+== Example usage ==
+
+On client side xmerlrpc can be used in two ways: as a standalone client and as
+a building block for processing XML-RPC protocol.
+
+Use as a standalone client:
+
+  URL = "http://server.example.com/RPC2",
+  case xmerlrpc:call(foo.bar, [...], [{url, URL}]) of
+    {ok, Value} ->
+      io:fwrite("Everything OK: ~p~n", [Value]);
+    {exception, {Code, Message}} ->
+      io:fwrite("Exception thrown: (code ~B)~n~s~n", [Code, Message]);
+    {error, Reason} ->
+      io:fwrite("Connection error: ~p~n", [Reason])
+  end.
+
+Use as a building block (application inets should already be started for
+httpc module):
+
+  URL = "http://server.example.com/RPC2",
+  {ok, ReqXML} = xmerlrpc:request(foo.bar, [...], []),
+  Request = {URL, [], "text/xml", iolist_to_binary(ReqXML)},
+  {ok, {{_,200,_}, _, Body}} = httpc:request(post, Request, [], []),
+  {ok,result,Result} = xmerlrpc:parse(Body, []).
+
+On server side currently there's only the building block approach (convenience
+wrappers coming soon). Let's assume that on XML-RPC request, following
+function is called:
+
+  do(_Headers, Body, Env) ->
+    case xmerlrpc:parse_request(Body, []) of
+      {ok, request, {ProcName, Args}} ->
+        % `Env' contains dictionary with procedures, example:call/3 finds and
+        % calls appropriate one
+        try example:call(ProcName, Args, Env) of
+          {ok, Result} ->
+            {ok, Reply} = xmerlrpc:result(Result, []),
+            {200, "text/xml", Reply};
+          not_found ->
+            {ok, Reply} = xmerlrpc:exception(1, "unknown procedure", []),
+            {200, "text/xml", Reply}
+        catch
+          error:Error ->
+            % if the procedure dies, exception is reported
+            {ok, Reply} = xmerlrpc:exception(2, example:to_string(Error), []),
+            {200, "text/xml", Reply}
+        end;
+      {error, Reason} ->
+        {400, "text/plain", example:to_string(Reason)}
+    end.

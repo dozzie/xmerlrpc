@@ -8,7 +8,6 @@
 %%%
 %%% @TODO Jiffy-like structures.
 %%% @TODO Split forming and parsing XML to separate modules.
-%%% @TODO Cleanup types documentation.
 %%%
 %%% @end
 %%%---------------------------------------------------------------------------
