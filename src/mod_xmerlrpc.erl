@@ -42,7 +42,7 @@
 
 %%%---------------------------------------------------------------------------
 
-%% @type proc_spec() = {Module :: atom(), Function :: atom()}.
+%% @type proc_spec() = {Module :: atom(), Function :: atom()} | fun().
 
 %% @type http_response() =
 %%   {StatusCode :: integer(), Headers :: list(), Body :: iolist()}.
