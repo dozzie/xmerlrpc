@@ -202,8 +202,10 @@ step_encode_exception(Exception) ->
 
 step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
   case proplists:lookup(ProcName, DispatchTable) of
-    {ProcName, {Module, Function}} ->
-      step_call_function(Module, Function, ProcArgs, Environment);
+    {ProcName, Function} when is_function(Function, 2) ->
+      step_call_function(Function, ProcArgs, Environment);
+    {ProcName, {_Module, _Function} = FunSpec} ->
+      step_call_function(FunSpec, ProcArgs, Environment);
     none ->
       error_logger:error_report(xmerlrpc, [{step, dispatch}, {error, unknown_procedure}]),
       % unknown procedure is an exception, not a transport error
@@ -212,28 +214,35 @@ step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
 
 %% @doc Call specified function with arguments and environment.
 %%
-%% @spec step_call_function(atom(), atom(), [xmerlrpc_xml:proc_arg()],
+%% @spec step_call_function({atom(), atom()} | fun(),
+%%                          [xmerlrpc_xml:proc_arg()],
 %%                          list()) ->
 %%     {ok, xmerlrpc_xml:proc_arg()}
 %%   | {exception, Exception :: iolist()}
 
-step_call_function(Module, Function, Args, Environment) ->
+step_call_function(Function, Args, Environment) ->
   % {ok,_} | {error,_} are for case when error is signaled by returned value
   % _ | erlang:error() are for case when error is signaled by dying
-  try Module:Function(Args, Environment) of
+  try do_call(Function, Args, Environment) of
     {ok, Result} ->
       {ok, Result};
     {error, Reason} ->
-      error_logger:error_report(xmerlrpc, [{step, call}, {error, Reason}, {mfae, {Module, Function, Args, Environment}}]),
+      error_logger:error_report(xmerlrpc, [{step, call}, {error, Reason}, {mfae, {Function, Args, Environment}}]),
       {exception, "Some error"}; % TODO: include `Reason'
     Result ->
       {ok, Result}
   catch
     % TODO: case for error:undef?
     error:Reason ->
-      error_logger:error_report(xmerlrpc, [{step, call}, {exit, Reason}, {mfae, {Module, Function, Args, Environment}}]),
+      error_logger:error_report(xmerlrpc, [{step, call}, {exit, Reason}, {mfae, {Function, Args, Environment}}]),
       {exception, "Some error"} % TODO: include `Reason'
   end.
+
+do_call(Function, Args, Environment) when is_function(Function, 2) ->
+  Function(Args, Environment);
+do_call({Module, Function}, Args, Environment) ->
+  Module:Function(Args, Environment).
+
 
 %%%---------------------------------------------------------------------------
 %%% HTTP helpers
