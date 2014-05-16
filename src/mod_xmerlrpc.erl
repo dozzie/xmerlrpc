@@ -7,6 +7,9 @@
 %%%   == Handler interface ==
 %%%
 %%%   <b>TODO</b>
+%%%
+%%%   @TODO `store({Option, Value}, Config) -> {ok, {Option, NewValue}}'
+%%%   @TODO `remove(ConfigDB) -> ok'
 %%% @end
 %%%---------------------------------------------------------------------------
 
@@ -40,6 +43,9 @@
 %%%---------------------------------------------------------------------------
 
 %% @type proc_spec() = {Module :: atom(), Function :: atom()}.
+
+%% @type http_response() =
+%%   {StatusCode :: integer(), Headers :: list(), Body :: iolist()}.
 
 %%%---------------------------------------------------------------------------
 
@@ -96,56 +102,160 @@ do(ModData = #mod{}) ->
   end.
 
 %%%---------------------------------------------------------------------------
+%%% XML-RPC request processing steps
+%%%---------------------------------------------------------------------------
 
 %% @doc Handle HTTP request.
-%%   Extract function and arguments from body and pass them to
-%%   {@link dispatch/4}.
+%%   Function validates HTTP part of XML-RPC protocol (method and
+%%   <i>Content-Type</i> header).
 %%
 %% @spec handle_request(string(), [{string(),string()}], string(),
 %%                      list(), term()) ->
-%%   {StatusCode :: integer(), Headers :: list(), Body :: iolist()}
+%%   http_response()
 
 handle_request("POST" = _Method, ReqHeaders, ReqBody,
                Environment, DispatchTable) ->
   case proplists:lookup("content-type", ReqHeaders) of
     {_Key, "text/xml"} ->
-      % TODO: proceed
-      StatusCode = 501, % Not Implemented
-      Headers = [{content_type, "text/plain"}],
-      Body = "This function is not implemented yet\n",
-      {StatusCode, Headers, Body};
+      handle_xmlrpc_request(ReqBody, Environment, DispatchTable);
     {_Key, OtherContentType} ->
-      StatusCode = 400, % Bad Request
-      Headers = [{content_type, "text/plain"}],
-      Body = ["Invalid content type: ", OtherContentType, "\n"],
-      {StatusCode, Headers, Body};
+      error_logger:error_report(xmerlrpc, [{step, validate_request}, {error, invalid_content_type}, {content_type, OtherContentType}]),
+      http_error(bad_request, ["Invalid content type: ", OtherContentType]);
     none ->
-      StatusCode = 400, % Bad Request
-      Headers = [{content_type, "text/plain"}],
-      Body = "No content type\n",
-      {StatusCode, Headers, Body}
+      error_logger:error_report(xmerlrpc, [{step, validate_request}, {error, no_content_type}]),
+      http_error(bad_request, "No content type")
   end;
 
 handle_request(Method, _ReqHeaders, _ReqBody, _Environment, _DispatchTable) ->
-  StatusCode = 405, % Method Not Allowed
-  Headers = [{content_type, "text/plain"}],
-  Body = ["Invalid method: ", Method, "\n"],
-  {StatusCode, Headers, Body}.
+  error_logger:error_report(xmerlrpc, [{step, validate_request}, {error, invalid_method}, {method, Method}]),
+  http_error(bad_method, ["Invalid method: ", Method]).
 
-%%%---------------------------------------------------------------------------
+%% @doc Handle XML-RPC request.
+%%   Function parses request body as XML and extracts procedure name and
+%%   arguments.
+%%
+%% @spec handle_xmlrpc_request(string(), list(), term()) ->
+%%   http_response()
+
+handle_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
+  case xmerlrpc_xml:parse_request(ReqBody, []) of
+    {ok, request, {ProcName, ProcArgs}} ->
+      execute_request(ProcName, ProcArgs, Environment, DispatchTable);
+    {error, Reason} ->
+      error_logger:error_report(xmerlrpc, [{step, parse_xmlrpc_request}, {error, Reason}]),
+      http_error(bad_request, "Invalid XML-RPC request")
+  end.
+
+%% @doc Execute RPC request.
+%%
+%% @spec execute_request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
+%%                       list(), term()) ->
+%%   http_response()
+
+execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
+  case dispatch(ProcName, ProcArgs, Environment, DispatchTable) of
+    {ok, Result} ->
+      encode_result(Result);
+    {exception, Exception} ->
+      % exception is not something to log
+      encode_exception(Exception);
+    {error, _Reason} ->
+      % this kind of errors should already be handled
+      http_error(internal, "Dispatch error")
+  end.
+
+%% @doc Encode value returned by called function.
+%%   Function finished successfully.
+%%
+%% @spec encode_result(xmerlrpc_xml:proc_arg()) ->
+%%   http_response()
+
+encode_result(Result) ->
+  case xmerlrpc_xml:result(Result, []) of
+    {ok, Body} ->
+      http_success(Body);
+    {error, Reason} ->
+      error_logger:error_report(xmerlrpc, [{step, encode_result}, {error, Reason}, {data, Result}]),
+      http_error(internal, "Procedure returned unserializable data")
+  end.
+
+%% @doc Encode error returned by called function.
+%%   Function finished with an error.
+%%
+%% @spec encode_exception(iolist()) ->
+%%   http_response()
+
+encode_exception(Exception) ->
+  {ok, Body} = xmerlrpc_xml:exception(1, Exception, []),
+  http_success(Body).
 
 %% @doc Find and call an appropriate function from dispatch table.
+%%
+%%   `{error,_}' is operational error. `{exception,_}' is an error reported by
+%%   the called function.
 %%
 %% @spec dispatch(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
 %%                [{Key :: atom(), Value :: term()}],
 %%                [{binary(), proc_spec()}]) ->
 %%     {ok, xmerlrpc_xml:xmlrpc_result()}
-%%   | {exception, Exception}
+%%   | {exception, Exception :: iolist()}
 %%   | {error, Reason}
 
-dispatch(_ProcName, _ProcArgs, _Environment, _DispatchTable) ->
-  % TODO: try..catch -> {error, Reason}
-  {error, not_implemented}.
+dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
+  case proplists:lookup(ProcName, DispatchTable) of
+    {ProcName, {Module, Function}} ->
+      call(Module, Function, ProcArgs, Environment);
+    none ->
+      error_logger:error_report(xmerlrpc, [{step, dispatch}, {error, unknown_procedure}]),
+      % unknown procedure is an exception, not a transport error
+      {exception, ["Unknown procedure: ", ProcName]}
+  end.
+
+%% @doc Call specified function with arguments and environment.
+%%
+%% @spec call(atom(), atom(), [xmerlrpc_xml:proc_arg()], list()) ->
+%%     {ok, xmerlrpc_xml:proc_arg()}
+%%   | {exception, Exception :: iolist()}
+
+call(Module, Function, Args, Environment) ->
+  % {ok,_} | {error,_} are for case when error is signaled by returned value
+  % _ | erlang:error() are for case when error is signaled by dying
+  try Module:Function(Args, Environment) of
+    {ok, Result} ->
+      {ok, Result};
+    {error, Reason} ->
+      error_logger:error_report(xmerlrpc, [{step, call}, {error, Reason}, {mfae, {Module, Function, Args, Environment}}]),
+      {exception, "Some error"}; % TODO: include `Reason'
+    Result ->
+      {ok, Result}
+  catch
+    % TODO: case for error:undef?
+    error:Reason ->
+      error_logger:error_report(xmerlrpc, [{step, call}, {exit, Reason}, {mfae, {Module, Function, Args, Environment}}]),
+      {exception, "Some error"} % TODO: include `Reason'
+  end.
+
+%%%---------------------------------------------------------------------------
+%%% HTTP helpers
+%%%---------------------------------------------------------------------------
+
+%% @doc Reply with HTTP success.
+%%   `Result' should already be XML-encoded, either XML-RPC result or
+%%   exception.
+
+http_success(Result) ->
+  {200, [{content_type, "text/xml"}], Result}.
+
+%% @doc Reply with HTTP error.
+
+http_error(internal = _Reason, Message) ->
+  {500, [{content_type, "text/plain"}], [Message, "\n"]};
+%http_error(not_implemented = _Reason, Message) ->
+%  {501, [{content_type, "text/plain"}], [Message, "\n"]};
+http_error(bad_request = _Reason, Message) ->
+  {400, [{content_type, "text/plain"}], [Message, "\n"]};
+http_error(bad_method = _Reason, Message) ->
+  {405, [{content_type, "text/plain"}], [Message, "\n"]}.
 
 %%%---------------------------------------------------------------------------
 

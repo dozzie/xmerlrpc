@@ -76,11 +76,22 @@
 %%%
 %%%   ```
 %%%   -module(example).
-%%%   -export([call/2]).
+%%%   -export([call1/2, error/2]). % first method of signaling success/failure
+%%%   -export([call2/2, die/2]).   % second method
 %%%
-%%%   call(Args, Context) ->
+%%%   call1(Args, Context) ->
 %%%     Result = [],
 %%%     {ok, Result}.
+%%%
+%%%   error(Args, Context) ->
+%%%     {error, return}.
+%%%
+%%%   call2(Args, Context) ->
+%%%     Result = [],
+%%%     Result.
+%%%
+%%%   die(Args, Context) ->
+%%%     erlang:error(die).
 %%%   '''
 %%%
 %%% @end
