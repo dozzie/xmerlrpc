@@ -56,9 +56,7 @@
 %%
 %% @spec do(#mod{}) ->
 %%     {proceed, list()}
-%%   | {proceed, [{response, {StatusCode, Body}}]}
 %%   | {proceed, [{response, {response, Headers, Body}}]}
-%%   | {break, [{response, {StatusCode, Body}}]}
 %%   | {break, [{response, {response, Headers, Body}}]}
 
 do(ModData = #mod{}) ->
@@ -82,7 +80,7 @@ do(ModData = #mod{}) ->
       ],
 
       % `Headers' don't contain `content_length'
-      {StatusCode, Headers, Body} = handle_request(
+      {StatusCode, Headers, Body} = step_validate_request(
         ModData#mod.method,
         ModData#mod.parsed_header,
         ModData#mod.entity_body,
@@ -105,19 +103,19 @@ do(ModData = #mod{}) ->
 %%% XML-RPC request processing steps
 %%%---------------------------------------------------------------------------
 
-%% @doc Handle HTTP request.
+%% @doc Validate HTTP request.
 %%   Function validates HTTP part of XML-RPC protocol (method and
 %%   <i>Content-Type</i> header).
 %%
-%% @spec handle_request(string(), [{string(),string()}], string(),
-%%                      list(), term()) ->
+%% @spec step_validate_request(string(), [{string(),string()}], string(),
+%%                             list(), term()) ->
 %%   http_response()
 
-handle_request("POST" = _Method, ReqHeaders, ReqBody,
-               Environment, DispatchTable) ->
+step_validate_request("POST" = _Method, ReqHeaders, ReqBody,
+                      Environment, DispatchTable) ->
   case proplists:lookup("content-type", ReqHeaders) of
     {_Key, "text/xml"} ->
-      handle_xmlrpc_request(ReqBody, Environment, DispatchTable);
+      step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable);
     {_Key, OtherContentType} ->
       error_logger:error_report(xmerlrpc, [{step, validate_request}, {error, invalid_content_type}, {content_type, OtherContentType}]),
       http_error(bad_request, ["Invalid content type: ", OtherContentType]);
@@ -126,21 +124,22 @@ handle_request("POST" = _Method, ReqHeaders, ReqBody,
       http_error(bad_request, "No content type")
   end;
 
-handle_request(Method, _ReqHeaders, _ReqBody, _Environment, _DispatchTable) ->
+step_validate_request(Method, _ReqHeaders, _ReqBody,
+                      _Environment, _DispatchTable) ->
   error_logger:error_report(xmerlrpc, [{step, validate_request}, {error, invalid_method}, {method, Method}]),
   http_error(bad_method, ["Invalid method: ", Method]).
 
-%% @doc Handle XML-RPC request.
+%% @doc Parse XML-RPC request.
 %%   Function parses request body as XML and extracts procedure name and
 %%   arguments.
 %%
-%% @spec handle_xmlrpc_request(string(), list(), term()) ->
+%% @spec step_parse_xmlrpc_request(string(), list(), term()) ->
 %%   http_response()
 
-handle_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
+step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
   case xmerlrpc_xml:parse_request(ReqBody, []) of
     {ok, request, {ProcName, ProcArgs}} ->
-      execute_request(ProcName, ProcArgs, Environment, DispatchTable);
+      step_execute_request(ProcName, ProcArgs, Environment, DispatchTable);
     {error, Reason} ->
       error_logger:error_report(xmerlrpc, [{step, parse_xmlrpc_request}, {error, Reason}]),
       http_error(bad_request, "Invalid XML-RPC request")
@@ -148,17 +147,17 @@ handle_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
 
 %% @doc Execute RPC request.
 %%
-%% @spec execute_request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
+%% @spec step_execute_request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
 %%                       list(), term()) ->
 %%   http_response()
 
-execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
-  case dispatch(ProcName, ProcArgs, Environment, DispatchTable) of
+step_execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
+  case step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) of
     {ok, Result} ->
-      encode_result(Result);
+      step_encode_result(Result);
     {exception, Exception} ->
       % exception is not something to log
-      encode_exception(Exception);
+      step_encode_exception(Exception);
     {error, _Reason} ->
       % this kind of errors should already be handled
       http_error(internal, "Dispatch error")
@@ -167,10 +166,10 @@ execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
 %% @doc Encode value returned by called function.
 %%   Function finished successfully.
 %%
-%% @spec encode_result(xmerlrpc_xml:proc_arg()) ->
+%% @spec step_encode_result(xmerlrpc_xml:proc_arg()) ->
 %%   http_response()
 
-encode_result(Result) ->
+step_encode_result(Result) ->
   case xmerlrpc_xml:result(Result, []) of
     {ok, Body} ->
       http_success(Body);
@@ -182,29 +181,29 @@ encode_result(Result) ->
 %% @doc Encode error returned by called function.
 %%   Function finished with an error.
 %%
-%% @spec encode_exception(iolist()) ->
+%% @spec step_encode_exception(iolist()) ->
 %%   http_response()
 
-encode_exception(Exception) ->
+step_encode_exception(Exception) ->
   {ok, Body} = xmerlrpc_xml:exception(1, Exception, []),
   http_success(Body).
 
-%% @doc Find and call an appropriate function from dispatch table.
+%% @doc Find an appropriate function from dispatch table.
 %%
 %%   `{error,_}' is operational error. `{exception,_}' is an error reported by
 %%   the called function.
 %%
-%% @spec dispatch(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
-%%                [{Key :: atom(), Value :: term()}],
-%%                [{binary(), proc_spec()}]) ->
+%% @spec step_dispatch(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
+%%                     [{Key :: atom(), Value :: term()}],
+%%                     [{binary(), proc_spec()}]) ->
 %%     {ok, xmerlrpc_xml:xmlrpc_result()}
 %%   | {exception, Exception :: iolist()}
 %%   | {error, Reason}
 
-dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
+step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
   case proplists:lookup(ProcName, DispatchTable) of
     {ProcName, {Module, Function}} ->
-      call(Module, Function, ProcArgs, Environment);
+      step_call_function(Module, Function, ProcArgs, Environment);
     none ->
       error_logger:error_report(xmerlrpc, [{step, dispatch}, {error, unknown_procedure}]),
       % unknown procedure is an exception, not a transport error
@@ -213,11 +212,12 @@ dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
 
 %% @doc Call specified function with arguments and environment.
 %%
-%% @spec call(atom(), atom(), [xmerlrpc_xml:proc_arg()], list()) ->
+%% @spec step_call_function(atom(), atom(), [xmerlrpc_xml:proc_arg()],
+%%                          list()) ->
 %%     {ok, xmerlrpc_xml:proc_arg()}
 %%   | {exception, Exception :: iolist()}
 
-call(Module, Function, Args, Environment) ->
+step_call_function(Module, Function, Args, Environment) ->
   % {ok,_} | {error,_} are for case when error is signaled by returned value
   % _ | erlang:error() are for case when error is signaled by dying
   try Module:Function(Args, Environment) of
