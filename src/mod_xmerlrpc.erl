@@ -101,24 +101,36 @@ do(ModData = #mod{}) ->
 %%   Extract function and arguments from body and pass them to
 %%   {@link dispatch/4}.
 %%
-%% @spec handle_request(term(), list(), string(), list(), term()) ->
+%% @spec handle_request(string(), [{string(),string()}], string(),
+%%                      list(), term()) ->
 %%   {StatusCode :: integer(), Headers :: list(), Body :: iolist()}
 
-handle_request(_Method, _ReqHeaders, _ReqBody, _Environment, _DispatchTable) ->
-  error_logger:info_report(xmerlrpc, [
-    {method, _Method}, {body, _ReqBody}
-  ]),
-  StatusCode = 501, % Not Implemented
-  Headers = [{content_type, "text/plain"}], % don't include `content_length'
-  Body = "This function is not implemented yet\n",
-  {StatusCode, Headers, Body}.
+handle_request("POST" = _Method, ReqHeaders, ReqBody,
+               Environment, DispatchTable) ->
+  case proplists:lookup("content-type", ReqHeaders) of
+    {_Key, "text/xml"} ->
+      % TODO: proceed
+      StatusCode = 501, % Not Implemented
+      Headers = [{content_type, "text/plain"}],
+      Body = "This function is not implemented yet\n",
+      {StatusCode, Headers, Body};
+    {_Key, OtherContentType} ->
+      StatusCode = 400, % Bad Request
+      Headers = [{content_type, "text/plain"}],
+      Body = ["Invalid content type: ", OtherContentType, "\n"],
+      {StatusCode, Headers, Body};
+    none ->
+      StatusCode = 400, % Bad Request
+      Headers = [{content_type, "text/plain"}],
+      Body = "No content type\n",
+      {StatusCode, Headers, Body}
+  end;
 
-typeof(A) when is_list(A)   -> list;
-typeof(A) when is_binary(A) -> binary;
-typeof(A) when is_atom(A)   -> atom;
-typeof(A) when is_number(A) -> number;
-typeof(A) when is_tuple(A)  -> tuple;
-typeof(_) -> unknown.
+handle_request(Method, _ReqHeaders, _ReqBody, _Environment, _DispatchTable) ->
+  StatusCode = 405, % Method Not Allowed
+  Headers = [{content_type, "text/plain"}],
+  Body = ["Invalid method: ", Method, "\n"],
+  {StatusCode, Headers, Body}.
 
 %%%---------------------------------------------------------------------------
 
