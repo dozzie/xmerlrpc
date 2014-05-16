@@ -2,7 +2,7 @@
 %%% @doc
 %%%   Usage examples of xmerlrpc on server side.
 %%%
-%%%   == Processing raw protocol ==
+%%%   == Raw protocol ==
 %%%
 %%%   Let's assume that function `do/3' is called to handle HTTP request,
 %%%   its `Env' argument contains a dictionary with procedures to call,
@@ -30,6 +30,57 @@
 %%%       {error, Reason} ->
 %%%         {400, "text/plain", example:to_string(Reason)}
 %%%     end.
+%%%   '''
+%%%
+%%%   == inets ==
+%%%
+%%%   === starting httpd ===
+%%%
+%%%   ```
+%%%   start_httpd() ->
+%%%     % remember to start `inets' application
+%%%     {ok, Config} = load_config(),
+%%%     {ok, HttpdPid} = inets:start(httpd, Config),
+%%%     {ok, HttpdPid}.
+%%%
+%%%   load_config() ->
+%%%     % proc_spec() :: {Module :: atom(), Function :: atom()}
+%%%     % ProcMap :: [{Name :: binary(), Proc :: proc_spec()}]
+%%%     ProcMap = [
+%%%       {<<"example">>, {example_handler, call}}
+%%%     ],
+%%%     DocumentRoot = "/var/www",
+%%%     ServerRoot = "/var/lib/www",
+%%%     Config = [
+%%%       % typical setup for inets/httpd
+%%%       {port, 1080}, {server_name, "localhost"},
+%%%       {document_root, DocumentRoot}, {server_root, ServerRoot},
+%%%       {directory_index, ["index.html"]}, % requires mod_alias
+%%%
+%%%       % httpd needs to load `mod_xmerlrpc'
+%%%       {modules, [mod_xmerlrpc, mod_alias, mod_dir, mod_get, mod_log]},
+%%%
+%%%       % mod_xmerlrpc's config
+%%%       {xmlrpc, {"/xmlrpc", ProcMap}},
+%%%
+%%%       % logging
+%%%       {transfer_log, "/var/log/httpd/access.log"},
+%%%       {error_log,    "/var/log/httpd/error.log"},
+%%%       {log_format, combined},
+%%%       {error_log_format, pretty}
+%%%     ],
+%%%     {ok, Config}.
+%%%   '''
+%%%
+%%%   === example handler module ===
+%%%
+%%%   ```
+%%%   -module(example).
+%%%   -export([call/2]).
+%%%
+%%%   call(Args, Context) ->
+%%%     Result = [],
+%%%     {ok, Result}.
 %%%   '''
 %%%
 %%% @end
