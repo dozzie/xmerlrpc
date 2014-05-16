@@ -238,6 +238,9 @@ step_call_function(Function, Args, Environment) ->
       {exception, "Some error"} % TODO: include `Reason'
   end.
 
+%% @doc Apply arguments to function.
+%%   The function is either a fun object or `{Mod,Fun}' tuple.
+
 do_call(Function, Args, Environment) when is_function(Function, 2) ->
   Function(Args, Environment);
 do_call({Module, Function}, Args, Environment) ->
