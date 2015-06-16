@@ -1,0 +1,4 @@
+<?xml version='1.0'?>
+<methodCall>
+  <methodName>func.name</methodName>
+</methodCall>

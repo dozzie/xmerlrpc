@@ -7,7 +7,7 @@ DIALYZER_OPTS = --no_check_plt $(foreach D,$(DIALYZER_PLT),--plt $D)
 
 #-----------------------------------------------------------------------------
 
-.PHONY: all doc edoc compile build dialyzer
+.PHONY: all doc edoc compile build dialyzer tests
 
 all: compile doc
 
@@ -19,6 +19,9 @@ compile build:
 
 dialyzer:
 	dialyzer $(strip $(DIALYZER_OPTS)) --src src
+
+tests:
+	prove --exec=estap tests/*.t
 
 #-----------------------------------------------------------------------------
 

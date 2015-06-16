@@ -1,0 +1,21 @@
+<?xml version='1.0'?>
+<methodCall>
+  <methodName>func.name</methodName>
+  <params>
+    <param>
+      <value>
+        <array>
+          <data>
+            <value>
+              <i4>4</i4>
+            </value>
+            <value>
+              <i4>5</i4>
+            </value>
+          </data>
+          <data/>
+        </array>
+      </value>
+    </param>
+  </params>
+</methodCall>

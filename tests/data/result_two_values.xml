@@ -1,0 +1,11 @@
+<?xml version='1.0'?>
+<methodResponse>
+  <params>
+    <param>
+      <value>
+        <i4>100</i4>
+      </value>
+      <value/>
+    </param>
+  </params>
+</methodResponse>
