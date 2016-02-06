@@ -14,43 +14,29 @@
 
 %% raw URL and URL broken into parts
 -export_type([url/0, url_spec/0]).
-%% URL fragments
--export_type([protocol/0, credentials/0, hostname/0, portnum/0]).
+%% URL parts
+-export_type([protocol/0, credentials/0, hostname/0, portnum/0, path/0]).
 
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
-%% @type url() = string().
-%%
+-type url() :: string().
 %% Raw, unparsed URL.
 
--type url() :: string().
-
-%% @type url_spec() =
-%%   {protocol(), credentials(), hostname(), portnum(), Path :: string()}.
-%%
+-type url_spec() :: {protocol(), credentials(), hostname(), portnum(), path()}.
 %% URL broken into parts.
 %%
-%% URL arguments (`?foo=...') are part of `Path'.
-
--type url_spec() ::
-  {protocol(), credentials(), hostname(), portnum(), Path :: string()}.
-
-%% @type protocol() = http | https.
+%% URL arguments (`?foo=...') are part of path.
 
 -type protocol() :: http | https.
 
-%% @type hostname() = string().
-
 -type hostname() :: string().
 
-%% @type portnum() = non_neg_integer() | default.
-
--type portnum() :: non_neg_integer() | default.
-
-%% @type credentials() = none | {Username :: string(), Password :: string()}.
+-type portnum() :: inet:port_number() | default.
 
 -type credentials() :: none | {Username :: string(), Password :: string()}.
+
+-type path() :: string().
 
 %%% }}}
 %%%---------------------------------------------------------------------------
@@ -61,28 +47,21 @@
 %%   Port is always returned as a number.
 %%
 %%   Note that URL arguments (`?foo=...') are treated as a part of path.
-%%
-%% @spec parse(url()) ->
-%%   url_spec() | {error, Reason}
 
 -spec parse(url()) ->
-  url_spec() | {error, Reason :: term()}.
+  url_spec() | {error, term()}.
 
 parse(URL) ->
   try
     parse_real(URL)
   catch
     error:_Any ->
-      io:fwrite("! ~p~n  ~p~n", [_Any, erlang:get_stacktrace()]),
       {error, badarg}
   end.
 
 %% @doc Split URL to protocol, host, port, path, and credentials.
 %%   This is the working function. {@link parse/1} only catches pattern
 %%   matching errors.
-%%
-%% @spec parse_real(url()) ->
-%%   url_spec()
 
 -spec parse_real(url()) ->
   url_spec().
@@ -143,11 +122,8 @@ parse_real(URL) ->
 %%% form URL {{{
 
 %% @doc Reconstruct HTTP URL from fragments.
-%%
-%% @spec form(protocol(), credentials(), hostname(), portnum(), string()) ->
-%%   url()
 
--spec form(protocol(), credentials(), hostname(), portnum(), string()) ->
+-spec form(protocol(), credentials(), hostname(), portnum(), path()) ->
   url().
 
 form(Protocol, Creds, Host, Port, Path) ->
@@ -178,9 +154,6 @@ form(Protocol, Creds, Host, Port, Path) ->
 %% @doc `%'-encode string.
 %%   List of characters to encode taken from
 %%   <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a>.
-%%
-%% @spec percent_encode(string() | binary()) ->
-%%   string()
 
 -spec percent_encode(string() | binary()) ->
   string().
@@ -209,22 +182,18 @@ percent_encode([C | Rest])  -> [C | percent_encode(Rest)];
 percent_encode("") -> "".
 
 %% @equiv form(Protocol, none, Host, Port, Path)
-%% @see   form/5
 %%
-%% @spec form(protocol(), hostname(), portnum(), string()) ->
-%%   url()
+%% @see form/5
 
--spec form(protocol(), hostname(), portnum(), string()) ->
+-spec form(protocol(), hostname(), portnum(), path()) ->
   url().
 
 form(Protocol, Host, Port, Path) ->
   form(Protocol, none, Host, Port, Path).
 
 %% @equiv form(Protocol, none, Host, Port, Path)
-%% @see   form/5
 %%
-%% @spec form(hostname(), portnum()) ->
-%%   url()
+%% @see form/5
 
 -spec form(hostname(), portnum()) ->
   url().
@@ -234,10 +203,8 @@ form(Host, Port) ->
 
 %% @doc Reconstruct HTTP URL from fragments.
 %%   The tuple is compatible with the one returned by {@link parse/1}.
-%% @see form/5
 %%
-%% @spec form(url_spec()) ->
-%%   url()
+%% @see form/5
 
 -spec form(url_spec()) ->
   url().
@@ -249,14 +216,10 @@ form({Protocol, Creds, Host, Port, Path} = _URLSpec) ->
 %%%---------------------------------------------------------------------------
 %%% defaults for url_spec() {{{
 
-%% @doc Fill `url_spec()' tuple with defaults.
+%% @doc Fill {@type url_spec()} tuple with defaults.
 %%   The tuple is compatible with the one returned by {@link parse/1}.
-%%
-%% @spec url_spec(protocol(), credentials(), hostname(), portnum(),
-%%                string()) ->
-%%   url_spec()
 
--spec url_spec(protocol(), credentials(), hostname(), portnum(), string()) ->
+-spec url_spec(protocol(), credentials(), hostname(), portnum(), path()) ->
   url_spec().
 
 url_spec(Protocol, Creds, Host, Port, Path) ->
@@ -273,22 +236,18 @@ url_spec(Protocol, Creds, Host, Port, Path) ->
   {Protocol, Creds, Host, PortNumeric, Path}.
 
 %% @equiv url_spec(Protocol, none, Host, Port, Path)
-%% @see   url_spec/5
 %%
-%% @spec url_spec(protocol(), hostname(), portnum(), string()) ->
-%%   url_spec()
+%% @see url_spec/5
 
--spec url_spec(protocol(), hostname(), portnum(), string()) ->
+-spec url_spec(protocol(), hostname(), portnum(), path()) ->
   url_spec().
 
 url_spec(Protocol, Host, Port, Path) ->
   url_spec(Protocol, none, Host, Port, Path).
 
 %% @equiv url_spec(http, Host, Port, "/")
-%% @see   url_spec/5
 %%
-%% @spec url_spec(hostname(), portnum()) ->
-%%   url_spec()
+%% @see url_spec/5
 
 -spec url_spec(hostname(), portnum()) ->
   url_spec().
@@ -297,10 +256,8 @@ url_spec(Host, Port) ->
   url_spec(http, Host, Port, "/").
 
 %% @equiv url_spec(Host, default)
-%% @see   url_spec/5
 %%
-%% @spec url_spec(hostname()) ->
-%%   url_spec()
+%% @see url_spec/5
 
 -spec url_spec(hostname()) ->
   url_spec().

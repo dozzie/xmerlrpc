@@ -38,9 +38,8 @@ httpc module):
   {ok, {{_,200,_}, _, Body}} = httpc:request(post, Request, [], []),
   {ok,result,Result} = xmerlrpc:parse(Body, []).
 
-On server side currently there's only the building block approach (convenience
-wrappers coming soon). Let's assume that on XML-RPC request, following
-function is called:
+On server side currently there's only the building block approach. Let's
+assume that on XML-RPC request, following function is called:
 
   do(_Headers, Body, Env) ->
     case xmerlrpc:parse_request(Body, []) of

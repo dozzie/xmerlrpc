@@ -30,7 +30,6 @@
 == TODO ==
 
   * options support
-  * Jiffy-style data structures support (there's only jsx for now)
   * tests (possibly using etap)
   * xmerlrpc_xml:
     * check code correctness in case of UTF-8
@@ -40,7 +39,6 @@
     * XML parser: rewrite with leex+yecc?
   * xmerlrpc:
     * http_request(), http_response()
-    * dispatch(), route(), apply()
   * built-in HTTP client:
     * HTTP authentication (basic + digest)
     * HTTP proxy (+ authentication?)

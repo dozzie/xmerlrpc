@@ -6,7 +6,6 @@
 == v0.2.0 ==
 
   * usage examples in documentation
-  * call dispatcher function
 
 == v0.3.0 ==
 

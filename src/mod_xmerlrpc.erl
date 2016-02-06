@@ -8,8 +8,8 @@
 %%%
 %%%   <b>TODO</b>
 %%%
-%%%   @TODO `store({Option, Value}, Config) -> {ok, {Option, NewValue}}'
-%%%   @TODO `remove(ConfigDB) -> ok'
+%%%   @todo `store({Option, Value}, Config) -> {ok, {Option, NewValue}}'
+%%%   @todo `remove(ConfigDB) -> ok'
 %%% @end
 %%%---------------------------------------------------------------------------
 

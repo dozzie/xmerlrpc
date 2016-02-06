@@ -2,8 +2,8 @@
 %%% @doc
 %%%   Simple and dumb HTTP client for xmerlrpc.
 %%%
-%%% @TODO SSL/TLS options (e.g. certificate verification).
-%%% @TODO Error when the server returns content without newlines (and closes
+%%% @todo SSL/TLS options (e.g. certificate verification).
+%%% @todo Error when the server returns content without newlines (and closes
 %%%   the connection)
 %%%
 %%% @end
@@ -16,33 +16,20 @@
 -export([get/2, get/3, get/4]).
 -export([post/2, post/3, post/4]).
 
-%% do I actually need to export these?
-%-export_type([http_header/0, http_response/0]).
-
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
-%% @type url() = xmerlrpc_url:url() | xmerlrpc_url:url_spec().
-
 -type url() :: xmerlrpc_url:url() | xmerlrpc_url:url_spec().
-
-%% @type http_request_body() = none | iolist().
 
 -type http_request_body() :: none | iolist().
 
-%% @type http_response() = {Headers :: [http_header()], Body :: binary()}.
+-type http_response() :: {[xmerlrpc:http_header()], Body :: binary()}.
 
--type http_response() :: {[http_header()], binary()}.
+-type http_status_code() :: pos_integer().
 
-%% @type http_header() = {Name :: binary(), Value :: binary()}.
-
--type http_header() :: {binary(), binary()}.
-
-%% @type socket().
+-type http_status_reason() :: binary().
 
 -type socket() :: {Type :: atom(), Socket :: term()}.
-
-%% @type optlist() = [{atom(), term()} | atom()].
 
 -type optlist() :: [{atom(), term()} | atom()].
 
@@ -51,12 +38,8 @@
 %%% generic request {{{
 
 %% @doc Connect to HTTP server, send a request and retrieve response.
-%%
-%% @spec request(get | post, url(), [http_header()],
-%%               http_request_body(), optlist()) ->
-%%   {ok, http_response()} | {error, Reason}
 
--spec request(get | post, url(), [http_header()], http_request_body(),
+-spec request(get | post, url(), [xmerlrpc:http_header()], http_request_body(),
               optlist()) ->
   {ok, http_response()} | {error, term()}.
 
@@ -73,7 +56,7 @@ request(Method, {Proto, _Creds, Host, Port, Path}, Headers, Body, _Opts) ->
     % TODO: Connection: keep-alive + retries
     % TODO: credentials
     send_http_method(Sock, Method, Path),
-    send_http_headers(Sock, [{"Host", Host}, {"Connection", "close"} | Headers]),
+    send_http_headers(Sock, [{"Host",Host}, {"Connection","close"} | Headers]),
     send_http_body(Sock, Body),
 
     {Code, StatusLine, ReplyHeaders, ReplyBodyList} = read_http_response(Sock),
@@ -96,11 +79,8 @@ request(Method, {Proto, _Creds, Host, Port, Path}, Headers, Body, _Opts) ->
 
 %% @doc Open HTTP (unencrypted) connection to specified host.
 %%   Port defaults to 80.
-%%
-%% @spec open_http(string(), xmerlrpc_url:portnum()) ->
-%%   socket()
 
--spec open_http(string(), xmerlrpc_url:portnum()) ->
+-spec open_http(xmerlrpc_url:hostname(), xmerlrpc_url:portnum()) ->
   socket().
 
 open_http(Host, default) ->
@@ -116,11 +96,8 @@ open_http(Host, Port) ->
 
 %% @doc Open HTTPs (SSL/TLS) connection to specified host.
 %%   Port defaults to 443.
-%%
-%% @spec open_https(string(), xmerlrpc_url:portnum()) ->
-%%   socket()
 
--spec open_https(string(), xmerlrpc_url:portnum()) ->
+-spec open_https(xmerlrpc_url:hostname(), xmerlrpc_url:portnum()) ->
   socket().
 
 open_https(Host, default) ->
@@ -135,9 +112,6 @@ open_https(Host, Port) ->
   end.
 
 %% @doc Close HTTP (unencrypted) connection.
-%%
-%% @spec close_http(socket()) ->
-%%   ok
 
 -spec close_http(socket()) ->
   ok.
@@ -146,9 +120,6 @@ close_http({Mod, S} = _Sock) ->
   Mod:close(S).
 
 %% @doc Send chunk of data through socket.
-%%
-%% @spec send(socket(), iolist()) ->
-%%   ok
 
 -spec send(socket(), iolist()) ->
   ok.
@@ -162,12 +133,9 @@ send({Mod, S} = _Sock, Data) ->
   end.
 
 %% @doc Read HTTP status line from socket.
-%%
-%% @spec recv_code(socket()) ->
-%%   {Code :: integer(), Status :: binary()}
 
 -spec recv_code(socket()) ->
-  {integer(), binary()}.
+  {http_status_code(), http_status_reason()}.
 
 recv_code({Mod, S} = _Sock) ->
   Line = case Mod:recv(S, 0) of
@@ -186,12 +154,9 @@ recv_code({Mod, S} = _Sock) ->
 %% @doc Read HTTP header from socket.
 %%
 %%   For headers returned as atoms, see erlang:decode_packet/3
-%%
-%% @spec recv_header(socket()) ->
-%%     {Name :: binary(), Value :: binary()} | http_eoh
 
 -spec recv_header(socket()) ->
-  {binary(), binary()} | http_eoh.
+  xmerlrpc:http_header() | http_eoh.
 
 recv_header({Mod, S} = _Sock) ->
   Line = case Mod:recv(S, 0) of
@@ -214,9 +179,6 @@ recv_header({Mod, S} = _Sock) ->
   end.
 
 %% @doc Read single (payload) line from socket.
-%%
-%% @spec recv_line(socket()) ->
-%%   binary()
 
 -spec recv_line(socket()) ->
   binary() | eof.
@@ -232,9 +194,6 @@ recv_line({Mod, S} = _Sock) ->
   end.
 
 %% @doc Convert atom or string to a binary.
-%%
-%% @spec ensure_binary(atom() | string()) ->
-%%   binary()
 
 -spec ensure_binary(atom() | string()) ->
   binary().
@@ -249,11 +208,8 @@ ensure_binary(Name) when is_list(Name) ->
 %% send various parts of HTTP request {{{
 
 %% @doc Send method line of HTTP request.
-%%
-%% @spec send_http_method(socket(), get | post, string()) ->
-%%   ok
 
--spec send_http_method(socket(), get | post, string()) ->
+-spec send_http_method(socket(), get | post, xmerlrpc_url:path()) ->
   ok.
 
 send_http_method(Sock, get, Path) ->
@@ -264,11 +220,8 @@ send_http_method(Sock, post, Path) ->
 %% @doc Send headers of HTTP request.
 %%   Function doesn't send <i>end of headers</i> marker, so it's still
 %%   possible to include further headers (like <i>Content-Length</i>).
-%%
-%% @spec send_http_headers(socket(), [http_header()]) ->
-%%   ok
 
--spec send_http_headers(socket(), [http_header()]) ->
+-spec send_http_headers(socket(), [xmerlrpc:http_header()]) ->
   ok.
 
 send_http_headers(_Sock, [] = _Headers) ->
@@ -282,9 +235,6 @@ send_http_headers(Sock, [{Name, Value} | Rest] = _Headers) ->
 %%   marker.
 %%
 %%   When `Body = none', no <i>Content-Length</i> is sent, of course.
-%%
-%% @spec send_http_body(socket(), http_request_body()) ->
-%%   ok
 
 -spec send_http_body(socket(), http_request_body()) ->
   ok.
@@ -309,13 +259,10 @@ send_http_body(Sock, Body) ->
 %% @see read_http_body_size/2
 %% @see read_http_body_chunked/1
 %% @see read_http_body_till_eof/1
-%%
-%% @spec read_http_response(socket()) ->
-%%   {Code :: integer(), Status :: binary(),
-%%     Headers :: [http_header()], Body :: iolist()}
 
 -spec read_http_response(socket()) ->
-  {integer(), binary(), [http_header()], iolist()}.
+  {http_status_code(), http_status_reason(),
+    [xmerlrpc:http_header()], Body :: iolist()}.
 
 read_http_response(Sock) ->
   {Code, Status} = recv_code(Sock),
@@ -341,12 +288,9 @@ read_http_response(Sock) ->
 %% @doc Read headers of HTTP response.
 %%
 %%   Headers' values don't include trailing CRLF.
-%%
-%% @spec read_http_headers(socket()) ->
-%%   [http_header()]
 
 -spec read_http_headers(socket()) ->
-  [http_header()].
+  [xmerlrpc:http_header()].
 
 read_http_headers(Sock) ->
   case recv_header(Sock) of
@@ -364,14 +308,11 @@ read_http_headers(Sock) ->
 %% @doc Read body of HTTP response.
 %%
 %%   For cases when server sent <i>Content-Length</i> header.
-%%
-%% @spec read_http_body_size(socket(), Size :: integer()) ->
-%%   iolist()
 
 -spec read_http_body_size(socket(), integer()) ->
   iolist().
 
-read_http_body_size(_Sock, 0) ->
+read_http_body_size(_Sock, 0 = _Size) ->
   [];
 read_http_body_size(Sock, Size) when Size > 0 ->
   % NOTE: if EOF was encountered, throw an error (not all was read, as there's
@@ -387,9 +328,6 @@ read_http_body_size(Sock, Size) when Size > 0 ->
 %% @doc Read body of HTTP response.
 %%
 %%   For cases when server sent <i>Transfer-Encoding: chunked</i> header.
-%%
-%% @spec read_http_body_chunked(socket()) ->
-%%   iolist()
 
 -spec read_http_body_chunked(socket()) ->
   iolist().
@@ -428,9 +366,6 @@ read_http_body_chunked(Sock) ->
 %%   For cases when no content length is known in advance. In such cases the
 %%   socket will be in EOF condition after reading the body (user still needs
 %%   to call {@link close_http/1}).
-%%
-%% @spec read_http_body_till_eof(socket()) ->
-%%   iolist()
 
 -spec read_http_body_till_eof(socket()) ->
   iolist().
@@ -451,9 +386,6 @@ read_http_body_till_eof(Sock) ->
 %%% GET {{{
 
 %% @doc Send GET request and retrieve response.
-%%
-%% @spec get(url(), Opts) ->
-%%   {ok, http_response()} | {error, Reason}
 
 -spec get(url(), optlist()) ->
   {ok, http_response()} | {error, term()}.
@@ -462,22 +394,16 @@ get(URL, Opts) ->
   get(URL, [], none, Opts).
 
 %% @doc Send GET request and retrieve response.
-%%
-%% @spec get(url(), [http_header()], Opts) ->
-%%   {ok, http_response()} | {error, Reason}
 
--spec get(url(), [http_header()], optlist()) ->
+-spec get(url(), [xmerlrpc:http_header()], optlist()) ->
   {ok, http_response()} | {error, term()}.
 
 get(URL, Headers, Opts) ->
   get(URL, Headers, none, Opts).
 
 %% @doc Send GET request and retrieve response.
-%%
-%% @spec get(url(), [http_header()], http_request_body(), optlist()) ->
-%%   {ok, http_response()} | {error, Reason}
 
--spec get(url(), [http_header()], http_request_body(), optlist()) ->
+-spec get(url(), [xmerlrpc:http_header()], http_request_body(), optlist()) ->
   {ok, http_response()} | {error, term()}.
 
 get(URL, Headers, Body, Opts) ->
@@ -488,9 +414,6 @@ get(URL, Headers, Body, Opts) ->
 %%% POST {{{
 
 %% @doc Send POST request and retrieve response.
-%%
-%% @spec post(url(), optlist()) ->
-%%   {ok, http_response()} | {error, Reason}
 
 -spec post(url(), optlist()) ->
   {ok, http_response()} | {error, term()}.
@@ -499,22 +422,16 @@ post(URL, Opts) ->
   post(URL, [], none, Opts).
 
 %% @doc Send POST request and retrieve response.
-%%
-%% @spec post(url(), [http_header()], optlist()) ->
-%%   {ok, http_response()} | {error, Reason}
 
--spec post(url(), [http_header()], optlist()) ->
+-spec post(url(), [xmerlrpc:http_header()], optlist()) ->
   {ok, http_response()} | {error, term()}.
 
 post(URL, Headers, Opts) ->
   post(URL, Headers, none, Opts).
 
 %% @doc Send POST request and retrieve response.
-%%
-%% @spec post(url(), [http_header()], http_request_body(), optlist()) ->
-%%   {ok, http_response()} | {error, Reason}
 
--spec post(url(), [http_header()], http_request_body(), optlist()) ->
+-spec post(url(), [xmerlrpc:http_header()], http_request_body(), optlist()) ->
   {ok, http_response()} | {error, term()}.
 
 post(URL, Headers, Body, Opts) ->
