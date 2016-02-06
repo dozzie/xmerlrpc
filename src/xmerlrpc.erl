@@ -11,21 +11,23 @@
 %% client API
 -export([call/3]).
 %% XML messages API
--export([request/3, result/2, exception/3]).
--export([parse/2, parse_request/2, parse_response/2]).
+-export([request/2, result/1, exception/2]).
+-export([parse/1, parse_request/1, parse_response/1]).
 
--export_type([http_body/0, http_header/0]).
+-export_type([http_client/0]).
 
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
 -type optlist() :: [{atom(), term()} | atom()].
 
--type http_body() :: binary().
-
--type http_header() :: {Name :: binary(), Value :: binary()}.
-
--type http_client() :: atom() | fun().
+-type http_client() ::
+    module()
+    | fun((xmerlrpc_url:url_spec(),
+            [xmerlrpc_http:header()], xmerlrpc_http:body()) ->
+          {ok, xmerlrpc_http:body()} | {error, term()}).
+%% HTTP client, either a module implementing {@link xmerlrpc_http} behaviour
+%% or a function that sends HTTP POST request.
 
 %%% }}}
 %%%---------------------------------------------------------------------------
@@ -46,11 +48,11 @@ call(Proc, Args, Opts) ->
     % extract URL (somewhat obvious, given the function name)
     {ok, URLSpec} = extract_url_spec(Opts),
     % build a request XML
-    {ok, RequestBody} = request(Proc, Args, Opts),
+    {ok, RequestBody} = request(Proc, Args),
     % send HTTP POST request
     {ok, {_Headers, ResponseBody}} = do_post(URLSpec, RequestBody, Opts),
     % parse response (obvious from function name)
-    {ok, result, Result} = parse_response(ResponseBody, Opts),
+    {ok, result, Result} = parse_response(ResponseBody),
     {ok, Result}
   catch
     error:{badmatch,{error,Reason}} ->
@@ -63,8 +65,9 @@ call(Proc, Args, Opts) ->
 %%   Headers returned are list of 2-tuples. Unused by the caller, so no spec
 %%   here.
 
--spec do_post(xmerlrpc_url:url_spec(), iolist(), optlist()) ->
-  {ok, {[http_header()], http_body()}} | {error, term()}.
+-spec do_post(xmerlrpc_url:url_spec(), xmerlrpc_http:body(),
+              xmerlrpc_http:optlist()) ->
+  {ok, xmerlrpc_http:response()} | {error, term()}.
 
 do_post(URLSpec, RequestBody, Opts) ->
   HTTPClient = proplists:get_value(http_client, Opts, xmerlrpc_http_client),
@@ -72,8 +75,9 @@ do_post(URLSpec, RequestBody, Opts) ->
 
 %% @doc Send HTTP POST and retrieve response.
 
--spec do_post(xmerlrpc_url:url_spec(), iolist(), http_client(), optlist()) ->
-  {ok, {[http_header()], http_body()}} | {error, term()}.
+-spec do_post(xmerlrpc_url:url_spec(), xmerlrpc_http:body(),
+              http_client(), xmerlrpc_http:optlist()) ->
+  {ok, xmerlrpc_http:response()} | {error, term()}.
 
 do_post(URLSpec, RequestBody, HTTPClient, Opts) when is_atom(HTTPClient) ->
   Headers = [{<<"Content-Type">>, <<"text/xml">>}],
@@ -99,7 +103,7 @@ extract_url_spec(Opts) ->
           Port = proplists:get_value(port, Opts, default),
           % HTTP vs. HTTPs is differentiated with presence of SSL options
           Proto = case proplists:is_defined(ssl_verify, Opts) orelse
-            proplists:is_defined(ssl_ca, Opts) of
+                       proplists:is_defined(ssl_ca, Opts) of
             true  -> https;
             false -> http
           end,
@@ -120,34 +124,34 @@ extract_url_spec(Opts) ->
 
 %% @doc Create XML-RPC request (function call) document.
 %%
-%% @see xmerlrpc_xml:request/3
+%% @see xmerlrpc_xml:request/2
 
--spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
+-spec request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()]) ->
   {ok, iolist()} | {error, term()}.
 
-request(Proc, Args, Opts) ->
-  xmerlrpc_xml:request(Proc, Args, Opts).
+request(Proc, Args) ->
+  xmerlrpc_xml:request(Proc, Args).
 
 %% @doc Create XML-RPC response document carrying result data returned by the
 %%   function.
 %%
-%% @see xmerlrpc_xml:result/2
+%% @see xmerlrpc_xml:result/1
 
--spec result(xmerlrpc_xml:proc_arg(), optlist()) ->
+-spec result(xmerlrpc_xml:proc_arg()) ->
   {ok, iolist()} | {error, term()}.
 
-result(Result, Opts) ->
-  xmerlrpc_xml:result(Result, Opts).
+result(Result) ->
+  xmerlrpc_xml:result(Result).
 
 %% @doc Create XML-RPC exception document.
 %%
-%% @see xmerlrpc_xml:exception/3
+%% @see xmerlrpc_xml:exception/2
 
--spec exception(integer(), iolist(), optlist()) ->
+-spec exception(integer(), iolist()) ->
   {ok, iolist()} | {error, term()}.
 
-exception(Code, Message, Opts) ->
-  xmerlrpc_xml:exception(Code, Message, Opts).
+exception(Code, Message) ->
+  xmerlrpc_xml:exception(Code, Message).
 
 %%% }}}
 %%%---------------------------------------------------------
@@ -155,38 +159,38 @@ exception(Code, Message, Opts) ->
 
 %% @doc Parse XML message to request, result or exception.
 %%
-%% @see xmerlrpc_xml:parse/2
+%% @see xmerlrpc_xml:parse/1
 
--spec parse(binary() | string(), optlist()) ->
+-spec parse(binary() | string()) ->
     {ok, request,   xmerlrpc_xml:xmlrpc_request()}
   | {ok, result,    xmerlrpc_xml:xmlrpc_result()}
   | {ok, exception, xmerlrpc_xml:xmlrpc_exception()}
   | {error, term()}.
 
-parse(XMLDocument, Opts) ->
-  xmerlrpc_xml:parse(XMLDocument, Opts).
+parse(XMLDocument) ->
+  xmerlrpc_xml:parse(XMLDocument).
 
 %% @doc Parse XML message to request.
 %%
-%% @see xmerlrpc_xml:parse_request/2
+%% @see xmerlrpc_xml:parse_request/1
 
--spec parse_request(binary() | string(), optlist()) ->
+-spec parse_request(binary() | string()) ->
   {ok, request, xmerlrpc_xml:xmlrpc_request()} | {error, term()}.
 
-parse_request(XMLDocument, Opts) ->
-  xmerlrpc_xml:parse_request(XMLDocument, Opts).
+parse_request(XMLDocument) ->
+  xmerlrpc_xml:parse_request(XMLDocument).
 
 %% @doc Parse XML message to result or exception.
 %%
-%% @see xmerlrpc_xml:parse_response/2
+%% @see xmerlrpc_xml:parse_response/1
 
--spec parse_response(binary() | string(), optlist()) ->
+-spec parse_response(binary() | string()) ->
     {ok, result,    xmerlrpc_xml:xmlrpc_result()}
   | {ok, exception, xmerlrpc_xml:xmlrpc_exception()}
   | {error, term()}.
 
-parse_response(XMLDocument, Opts) ->
-  xmerlrpc_xml:parse_response(XMLDocument, Opts).
+parse_response(XMLDocument) ->
+  xmerlrpc_xml:parse_response(XMLDocument).
 
 %%% }}}
 %%%---------------------------------------------------------

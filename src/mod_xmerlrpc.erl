@@ -137,7 +137,7 @@ step_validate_request(Method, _ReqHeaders, _ReqBody,
 %%   http_response()
 
 step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
-  case xmerlrpc_xml:parse_request(ReqBody, []) of
+  case xmerlrpc_xml:parse_request(ReqBody) of
     {ok, request, {ProcName, ProcArgs}} ->
       step_execute_request(ProcName, ProcArgs, Environment, DispatchTable);
     {error, Reason} ->
@@ -157,10 +157,10 @@ step_execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
       step_encode_result(Result);
     {exception, Exception} ->
       % exception is not something to log
-      step_encode_exception(Exception);
-    {error, _Reason} ->
-      % this kind of errors should already be handled
-      http_error(internal, "Dispatch error")
+      step_encode_exception(Exception)
+    %{error, _Reason} ->
+    %  % this kind of errors should already be handled
+    %  http_error(internal, "Dispatch error")
   end.
 
 %% @doc Encode value returned by called function.
@@ -170,7 +170,7 @@ step_execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
 %%   http_response()
 
 step_encode_result(Result) ->
-  case xmerlrpc_xml:result(Result, []) of
+  case xmerlrpc_xml:result(Result) of
     {ok, Body} ->
       http_success(Body);
     {error, Reason} ->
@@ -185,7 +185,7 @@ step_encode_result(Result) ->
 %%   http_response()
 
 step_encode_exception(Exception) ->
-  {ok, Body} = xmerlrpc_xml:exception(1, Exception, []),
+  {ok, Body} = xmerlrpc_xml:exception(1, Exception),
   http_success(Body).
 
 %% @doc Find an appropriate function from dispatch table.

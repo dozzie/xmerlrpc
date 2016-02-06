@@ -15,8 +15,8 @@
 
 -include_lib("xmerl/include/xmerl.hrl").
 
--export([request/3, result/2, exception/3]).
--export([parse/2, parse_request/2, parse_response/2]).
+-export([request/2, result/1, exception/2]).
+-export([parse/1, parse_request/1, parse_response/1]).
 
 -export_type([proc_name/0, proc_arg/0]).
 -export_type([xmlrpc_request/0, xmlrpc_result/0, xmlrpc_exception/0]).
@@ -27,8 +27,6 @@
 -type proc_name() :: string() | binary() | atom().
 
 -type proc_arg() :: jsx_value().
-
--type optlist() :: [{atom(), term()} | atom()].
 
 %%----------------------------------------------------------
 %% parsed XML-RPC documents {{{
@@ -65,10 +63,10 @@
 
 %% @doc Form XML document containing XML-RPC request (function call).
 
--spec request(proc_name(), [proc_arg()], optlist()) ->
+-spec request(proc_name(), [proc_arg()]) ->
   {ok, iolist()} | {error, term()}.
 
-request(ProcName, ProcParams, _Opts) ->
+request(ProcName, ProcParams) ->
   try
     XMLCall = e(methodCall, [
       e(methodName, [text(name_to_string(ProcName))]),
@@ -83,10 +81,10 @@ request(ProcName, ProcParams, _Opts) ->
 
 %% @doc Form XML document carrying call result (function reply).
 
--spec result(proc_arg(), optlist()) ->
+-spec result(proc_arg()) ->
   {ok, iolist()} | {error, term()}.
 
-result(Result, _Opts) ->
+result(Result) ->
   try
     XMLResponse = e(methodResponse, [
       e(params, [
@@ -106,10 +104,10 @@ result(Result, _Opts) ->
 
 %% @doc Form XML document carrying exception information (function reply).
 
--spec exception(integer(), iolist(), optlist()) ->
+-spec exception(integer(), iolist()) ->
   {ok, iolist()} | {error, term()}.
 
-exception(Code, MessageIOL, _Opts) ->
+exception(Code, MessageIOL) ->
   try
     Message = iolist_to_binary(MessageIOL),
     XMLResponse = e(methodResponse, [
@@ -136,15 +134,15 @@ exception(Code, MessageIOL, _Opts) ->
 %%
 %% @todo Rewrite this to SAX-style parser.
 
--spec parse(binary() | string(), optlist()) ->
+-spec parse(binary() | string()) ->
     {ok, request,   xmlrpc_request()}
   | {ok, result,    xmlrpc_result()}
   | {ok, exception, xmlrpc_exception()}
   | {error, term()}.
 
-parse(XML, Opts) when is_binary(XML) ->
-  parse(binary_to_list(XML), Opts);
-parse(XML, _Opts) when is_list(XML) ->
+parse(XML) when is_binary(XML) ->
+  parse(binary_to_list(XML));
+parse(XML) when is_list(XML) ->
   try
     {Document, _Rest} = xmerl_scan:string(XML, [{quiet,true}]),
     decode_document(Document)
@@ -163,11 +161,11 @@ parse(XML, _Opts) when is_list(XML) ->
 
 %% @doc Parse XML message to request.
 
--spec parse_request(binary() | string(), optlist()) ->
+-spec parse_request(binary() | string()) ->
   {ok, request, xmlrpc_request()} | {error, term()}.
 
-parse_request(XML, Opts) ->
-  case parse(XML, Opts) of
+parse_request(XML) ->
+  case parse(XML) of
     {ok, request, _Data} = Result ->
       Result;
     {ok, result, _Data} ->
@@ -180,13 +178,13 @@ parse_request(XML, Opts) ->
 
 %% @doc Parse XML message to result or exception.
 
--spec parse_response(binary() | string(), optlist()) ->
+-spec parse_response(binary() | string()) ->
     {ok, result,    xmlrpc_result()}
   | {ok, exception, xmlrpc_exception()}
   | {error, term()}.
 
-parse_response(XML, Opts) ->
-  case parse(XML, Opts) of
+parse_response(XML) ->
+  case parse(XML) of
     {ok, request, _Data} ->
       {error, not_response};
     {ok, result, _Data} = Result ->
@@ -257,7 +255,7 @@ e(Tag, Content) ->
 %% @doc Create text content node for XML element (for {@link e/2}, for
 %%   example).
 
--spec text(iolist()) ->
+-spec text(iolist() | binary()) ->
   #xmlText{}.
 
 text(Text) ->
