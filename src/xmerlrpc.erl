@@ -14,12 +14,18 @@
 -export([request/2, result/1, exception/2]).
 -export([parse/1, parse_request/1, parse_response/1]).
 
--export_type([http_client/0]).
-
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
--type optlist() :: [{atom(), term()} | atom()].
+-type option() ::
+    xmerlrpc_http:option()
+  | {url, xmerlrpc_url:url()}
+  | {host, xmerlrpc_url:hostname()}
+  | {port, xmerlrpc_url:portnum()}
+  | {http_client, http_client()}.
+%% Call configuration option.
+%%
+%% Option `{url,_}' has precedence over `{host,_}' and `{port,_}'.
 
 -type http_client() ::
     module()
@@ -38,7 +44,7 @@
 %%   level failure and `{exception,E}' when remote procedure raised an
 %%   exception.
 
--spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], optlist()) ->
+-spec call(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()], [option()]) ->
     {ok, xmerlrpc_xml:proc_arg()}
   | {exception, xmerlrpc_xml:xmlrpc_exception()}
   | {error, term()}.
@@ -66,7 +72,7 @@ call(Proc, Args, Opts) ->
 %%   here.
 
 -spec do_post(xmerlrpc_url:url_spec(), xmerlrpc_http:body(),
-              xmerlrpc_http:optlist()) ->
+              [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 do_post(URLSpec, RequestBody, Opts) ->
@@ -76,7 +82,7 @@ do_post(URLSpec, RequestBody, Opts) ->
 %% @doc Send HTTP POST and retrieve response.
 
 -spec do_post(xmerlrpc_url:url_spec(), xmerlrpc_http:body(),
-              http_client(), xmerlrpc_http:optlist()) ->
+              http_client(), [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 do_post(URLSpec, RequestBody, HTTPClient, Opts) when is_atom(HTTPClient) ->
@@ -88,7 +94,7 @@ do_post(URLSpec, RequestBody, HTTPClient, _Opts) when is_function(HTTPClient) ->
 
 %% @doc Construct {@type xmerlrpc_url:url_spec()} based on options proplist.
 
--spec extract_url_spec(optlist()) ->
+-spec extract_url_spec([option()]) ->
   {ok, xmerlrpc_url:url_spec()} | {error, term()}.
 
 extract_url_spec(Opts) ->

@@ -37,7 +37,7 @@
 
 -spec request(get | post, url(),
               [xmerlrpc_http:header()], xmerlrpc_http:body() | none,
-              xmerlrpc_http:optlist()) ->
+              [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 request(Method, URL, Headers, Body, Opts) when is_list(URL) ->
@@ -381,7 +381,7 @@ read_http_body_till_eof(Sock) ->
 
 %% @doc Send GET request and retrieve response.
 
--spec get(url(), xmerlrpc_http:optlist()) ->
+-spec get(url(), [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 get(URL, Opts) ->
@@ -389,7 +389,7 @@ get(URL, Opts) ->
 
 %% @doc Send GET request and retrieve response.
 
--spec get(url(), [xmerlrpc_http:header()], xmerlrpc_http:optlist()) ->
+-spec get(url(), [xmerlrpc_http:header()], [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 get(URL, Headers, Opts) ->
@@ -398,7 +398,7 @@ get(URL, Headers, Opts) ->
 %% @doc Send GET request and retrieve response.
 
 -spec get(url(), [xmerlrpc_http:header()], xmerlrpc_http:body() | none,
-          xmerlrpc_http:optlist()) ->
+          [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 get(URL, Headers, Body, Opts) ->
@@ -410,7 +410,7 @@ get(URL, Headers, Body, Opts) ->
 
 %% @doc Send POST request and retrieve response.
 
--spec post(url(), xmerlrpc_http:optlist()) ->
+-spec post(url(), [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 post(URL, Opts) ->
@@ -418,7 +418,7 @@ post(URL, Opts) ->
 
 %% @doc Send POST request and retrieve response.
 
--spec post(url(), [xmerlrpc_http:header()], xmerlrpc_http:optlist()) ->
+-spec post(url(), [xmerlrpc_http:header()], [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 post(URL, Headers, Opts) ->
@@ -427,7 +427,7 @@ post(URL, Headers, Opts) ->
 %% @doc Send POST request and retrieve response.
 
 -spec post(url(), [xmerlrpc_http:header()], xmerlrpc_http:body() | none,
-           xmerlrpc_http:optlist()) ->
+           [xmerlrpc_http:option()]) ->
   {ok, xmerlrpc_http:response()} | {error, term()}.
 
 post(URL, Headers, Body, Opts) ->
