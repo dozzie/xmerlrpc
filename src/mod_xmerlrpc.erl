@@ -4,12 +4,57 @@
 %%%
 %%%   For example of use, see {@link examples_server}.
 %%%
+%%%   == Configuration ==
+%%%
+%%%   Obviously, `mod_xmerlrpc' needs to be added to `modules' list:
+%```
+%Config = [
+%  % ...
+%  {modules, [mod_xmerlrpc, mod_alias, mod_dir, mod_get, mod_log]},
+%  % ...
+%],
+%inets:start(httpd, Config).
+%'''
+%%%
+%%%   Additionally, paths that are supposed to handle XML-RPC requests must be
+%%%   provided, along with lists of procedures that are exposed through these
+%%%   paths.
+%%%
+%%%   An entry specifying such path has type
+%%%   {@type @{xmlrpc, @{Path :: string(), Procedures :: dispatch_table()@}@}}
+%%%
+%%%   The entry could look like this:
+%```
+%Config = [
+%  % ...
+%  {xmlrpc, {"/rpc", [
+%    {<<"proc.name">>, {example_handler, proc_name}},
+%    {<<"another.proc">>, {example_handler, another_procedure}},
+%    % ...
+%  ]}},
+%  % ...
+%],
+%'''
+%%%
+%%%   There can be many `{xmlrpc, {Path, Procs}}' entries in config, each for
+%%%   different path. For call will be selected the entry that has the longest
+%%%   `Path' that is a prefix of what was requested.
+%%%
+%%%   Note that the module does not process a request if its path is not under
+%%%   any of the configured paths for RPC.
+%%%
 %%%   == Handler interface ==
 %%%
 %%%   <b>TODO</b>
 %%%
-%%%   @todo `store({Option, Value}, Config) -> {ok, {Option, NewValue}}'
-%%%   @todo `remove(ConfigDB) -> ok'
+%%%   Function exported from module is called with two arguments: {@type
+%%%   [xmerlrpc_xml:proc_arg()]} and {@type call_environment()} and should
+%%%   return {@type call_result()}.
+%%%
+%%% @todo Error reporting better than current hardcoded `{exception, "Some
+%%%   error"}'
+%%% @todo Allow procedure names to be strings and atoms in {@type
+%%%   dispatch_table()}
 %%% @end
 %%%---------------------------------------------------------------------------
 
@@ -21,9 +66,11 @@
 %% `httpd' module API
 -export([do/1]).
 
+-export_type([proc_spec/0, dispatch_table/0, call_environment/0]).
+
 %%%---------------------------------------------------------------------------
 
-%% record
+%% `httpd' request record
 -record(mod, {
   init_data, % this field is not mentioned in doc, but exists in passed record
   data = [],
@@ -42,10 +89,60 @@
 
 %%%---------------------------------------------------------------------------
 
-%% @type proc_spec() = {Module :: atom(), Function :: atom()} | fun().
+%%----------------------------------------------------------
+%% inets/httpd configuration for mod_xmerlrpc
 
-%% @type http_response() =
-%%   {StatusCode :: integer(), Headers :: list(), Body :: iolist()}.
+-type proc_spec() ::
+    {module(), Function :: atom()}
+  | fun(([xmerlrpc_xml:proc_arg()], call_environment()) -> call_result()).
+
+-type dispatch_table() :: [{ProcName :: binary(), Function :: proc_spec()}].
+%% List of procedures that are exposed, along with what function to call for
+%% specific name.
+
+%%----------------------------------------------------------
+%% call data types
+
+-type call_env_var() ::
+    {root_uri, string()}
+  | {uri, string()}.
+%% `uri' is the requested URI. `root_uri' is the prefix from `mod_xmerlrpc'
+%% configuration that matched `uri'.
+
+-type call_environment() :: [call_env_var()].
+%% List (proplist) of variables describing HTTP request the call handles.
+
+-type call_result() ::
+    {ok, xmerlrpc_xml:proc_arg()}
+  | {error, term()}
+  | xmerlrpc_xml:proc_arg().
+%% <b>TODO</b>: standarize this.
+
+%%----------------------------------------------------------
+%% response data for inets/httpd
+
+-type http_response() :: {status_code(), [header()], body()}.
+
+-type status_code() :: pos_integer().
+
+-type header() :: {Name :: atom(), Value :: string()}.
+
+-type body() :: iolist().
+
+%%----------------------------------------------------------
+%% inets/httpd request data
+
+-type req_method() :: string().
+
+-type req_header() :: {Name :: string(), Value :: string()}.
+%% `Name' is lower case.
+
+-type req_body() :: string().
+
+-type request_data() :: term().
+%% Whatever came in `ModData#mod.data'.
+
+%%----------------------------------------------------------
 
 %%%---------------------------------------------------------------------------
 
@@ -53,11 +150,11 @@
 %% @doc Process HTTP request (`inets' callback).
 %%
 %%   Return `{proceed, ModData#mod.data}' when operation skipped.
-%%
-%% @spec do(#mod{}) ->
-%%     {proceed, list()}
-%%   | {proceed, [{response, {response, Headers, Body}}]}
-%%   | {break, [{response, {response, Headers, Body}}]}
+
+-spec do(#mod{}) ->
+    {proceed, request_data()}
+  | {proceed, [{response, {response, [header()], body()}}]}
+  | {break,   [{response, {response, [header()], body()}}]}.
 
 do(ModData = #mod{}) ->
   case find_prefix(ModData#mod.config_db, ModData#mod.request_uri) of
@@ -106,16 +203,16 @@ do(ModData = #mod{}) ->
 %% @doc Validate HTTP request.
 %%   Function validates HTTP part of XML-RPC protocol (method and
 %%   <i>Content-Type</i> header).
-%%
-%% @spec step_validate_request(string(), [{string(),string()}], string(),
-%%                             list(), term()) ->
-%%   http_response()
+
+-spec step_validate_request(req_method(), [req_header()], req_body(),
+                            call_environment(), dispatch_table()) ->
+  http_response().
 
 step_validate_request("POST" = _Method, ReqHeaders, ReqBody,
                       Environment, DispatchTable) ->
   case proplists:lookup("content-type", ReqHeaders) of
     {_Key, "text/xml"} ->
-      step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable);
+     step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable);
     {_Key, OtherContentType} ->
       error_logger:error_report(xmerlrpc, [{step, validate_request}, {error, invalid_content_type}, {content_type, OtherContentType}]),
       http_error(bad_request, ["Invalid content type: ", OtherContentType]);
@@ -132,9 +229,10 @@ step_validate_request(Method, _ReqHeaders, _ReqBody,
 %% @doc Parse XML-RPC request.
 %%   Function parses request body as XML and extracts procedure name and
 %%   arguments.
-%%
-%% @spec step_parse_xmlrpc_request(string(), list(), term()) ->
-%%   http_response()
+
+-spec step_parse_xmlrpc_request(req_body(), call_environment(),
+                                dispatch_table()) ->
+  http_response().
 
 step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
   case xmerlrpc_xml:parse_request(ReqBody) of
@@ -146,10 +244,10 @@ step_parse_xmlrpc_request(ReqBody, Environment, DispatchTable) ->
   end.
 
 %% @doc Execute RPC request.
-%%
-%% @spec step_execute_request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
-%%                       list(), term()) ->
-%%   http_response()
+
+-spec step_execute_request(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
+                           call_environment(), dispatch_table()) ->
+  http_response().
 
 step_execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
   case step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) of
@@ -165,9 +263,9 @@ step_execute_request(ProcName, ProcArgs, Environment, DispatchTable) ->
 
 %% @doc Encode value returned by called function.
 %%   Function finished successfully.
-%%
-%% @spec step_encode_result(xmerlrpc_xml:proc_arg()) ->
-%%   http_response()
+
+-spec step_encode_result(xmerlrpc_xml:proc_arg()) ->
+  http_response().
 
 step_encode_result(Result) ->
   case xmerlrpc_xml:result(Result) of
@@ -180,9 +278,9 @@ step_encode_result(Result) ->
 
 %% @doc Encode error returned by called function.
 %%   Function finished with an error.
-%%
-%% @spec step_encode_exception(iolist()) ->
-%%   http_response()
+
+-spec step_encode_exception(iolist()) ->
+  http_response().
 
 step_encode_exception(Exception) ->
   {ok, Body} = xmerlrpc_xml:exception(1, Exception),
@@ -192,13 +290,12 @@ step_encode_exception(Exception) ->
 %%
 %%   `{error,_}' is operational error. `{exception,_}' is an error reported by
 %%   the called function.
-%%
-%% @spec step_dispatch(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
-%%                     [{Key :: atom(), Value :: term()}],
-%%                     [{binary(), proc_spec()}]) ->
-%%     {ok, xmerlrpc_xml:xmlrpc_result()}
-%%   | {exception, Exception :: iolist()}
-%%   | {error, Reason}
+
+-spec step_dispatch(xmerlrpc_xml:proc_name(), [xmerlrpc_xml:proc_arg()],
+                    call_environment(), dispatch_table()) ->
+    {ok, xmerlrpc_xml:xmlrpc_result()}
+  | {exception, Exception :: iolist()}.
+% | {error, term()}.
 
 step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
   case proplists:lookup(ProcName, DispatchTable) of
@@ -213,12 +310,12 @@ step_dispatch(ProcName, ProcArgs, Environment, DispatchTable) ->
   end.
 
 %% @doc Call specified function with arguments and environment.
-%%
-%% @spec step_call_function({atom(), atom()} | fun(),
-%%                          [xmerlrpc_xml:proc_arg()],
-%%                          list()) ->
-%%     {ok, xmerlrpc_xml:proc_arg()}
-%%   | {exception, Exception :: iolist()}
+
+-spec step_call_function(proc_spec(), [xmerlrpc_xml:proc_arg()],
+                         call_environment()) ->
+    {ok, xmerlrpc_xml:proc_arg()}
+  | {exception, Exception :: iolist()}.
+% | {error, term()}.
 
 step_call_function(Function, Args, Environment) ->
   % {ok,_} | {error,_} are for case when error is signaled by returned value
@@ -239,26 +336,34 @@ step_call_function(Function, Args, Environment) ->
   end.
 
 %% @doc Apply arguments to function.
-%%   The function is either a fun object or `{Mod,Fun}' tuple.
+
+-spec do_call(proc_spec(), [xmerlrpc_xml:proc_arg()], call_environment()) ->
+  call_result().
 
 do_call(Function, Args, Environment) when is_function(Function, 2) ->
   Function(Args, Environment);
 do_call({Module, Function}, Args, Environment) ->
   Module:Function(Args, Environment).
 
-
 %%%---------------------------------------------------------------------------
 %%% HTTP helpers
 %%%---------------------------------------------------------------------------
 
 %% @doc Reply with HTTP success.
-%%   `Result' should already be XML-encoded, either XML-RPC result or
-%%   exception.
+%%   `Result' should already be XML-encoded, either XML-RPC result (serialized
+%%   {@type xmerlrpc_xml:xmlrpc_result()}) or exception (serialized {@type
+%%   xmerlrpc_xml:xmlrpc_exception()}).
+
+-spec http_success(iolist()) ->
+  http_response().
 
 http_success(Result) ->
   {200, [{content_type, "text/xml"}], Result}.
 
 %% @doc Reply with HTTP error.
+
+-spec http_error(internal | bad_request | bad_method, iolist()) ->
+  http_response().
 
 http_error(internal = _Reason, Message) ->
   {500, [{content_type, "text/plain"}], [Message, "\n"]};
@@ -272,9 +377,9 @@ http_error(bad_method = _Reason, Message) ->
 %%%---------------------------------------------------------------------------
 
 %% @doc Find the longest URI prefix in configuration that matches the request.
-%%
-%% @spec find_prefix(term(), string()) ->
-%%   {string(), DispatchTable :: term()} | none
+
+-spec find_prefix(ets:tab(), string()) ->
+  {RootURI :: string(), dispatch_table()} | none.
 
 find_prefix(Table, RequestURI) ->
   Q = qlc:q([
@@ -293,9 +398,9 @@ find_prefix(Table, RequestURI) ->
 %%%---------------------------------------------------------------------------
 
 %% @doc Check if the `Prefix' is a prefix of `URI'.
-%%
-%% @spec is_uri_prefix_of(string(), string()) ->
-%%   bool()
+
+-spec is_uri_prefix_of(string(), string()) ->
+  boolean().
 
 is_uri_prefix_of("" = _Prefix, "" = _URI) ->
   true;
