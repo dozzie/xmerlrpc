@@ -18,6 +18,8 @@
 -export([get/2, get/3, get/4]).
 -export([post/2, post/3, post/4]).
 
+-export_type([socket/0]).
+
 %%%---------------------------------------------------------------------------
 %%% types {{{
 
@@ -27,7 +29,7 @@
 
 -type http_status_reason() :: binary().
 
--type socket() :: {Type :: atom(), Socket :: term()}.
+-opaque socket() :: {Type :: atom(), Socket :: term()}.
 
 %%% }}}
 %%%---------------------------------------------------------------------------
